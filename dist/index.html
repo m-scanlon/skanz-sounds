@@ -1,0 +1,2468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SKANZ.SOUNDS — laser instrument</title>
+<meta name="description" content="A laser show that reads a whole track before it plays, so the lights anticipate the drops instead of chasing them. Drop in an audio file.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#06070C">
+<meta property="og:type" content="website">
+<meta property="og:title" content="SKANZ.SOUNDS — laser instrument">
+<meta property="og:description" content="A laser show that reads a whole track before it plays, so the lights anticipate the drops instead of chasing them. Drop in an audio file.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%9B%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<style>
+  *,*::before,*::after{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+</style>
+</head>
+<body>
+<style>
+  :root{
+    --ink:#06070C;
+    --ink-2:#0D0F18;
+    --haze:#1B1E2C;
+    --chalk:#E6E4EF;
+    --mute:#8C8A9E;
+    --dim:#5F5D6E;
+    --low:#E8365D;
+    --mid:#F5A524;
+    --air:#7FE7E0;
+
+    --display:"Avenir Next Condensed","Futura","Helvetica Neue",Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+
+  html,body{height:100%;}
+  body{
+    margin:0;background:var(--ink);color:var(--chalk);
+    font-family:var(--mono);overflow:hidden;-webkit-font-smoothing:antialiased;
+  }
+
+  #stage{position:fixed;inset:0;background:var(--ink);}
+  #gl{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none;}
+  #gl.dragging{cursor:grabbing;}
+
+  .chrome{position:absolute;z-index:2;transition:opacity .5s ease,transform .5s ease;}
+  body.idle-chrome .chrome:not(.pin){opacity:0;transform:translateY(6px);pointer-events:none;}
+
+  #mark{top:22px;left:26px;display:flex;align-items:baseline;gap:12px;}
+  #mark .name{
+    font-family:var(--display);font-weight:700;font-size:26px;
+    letter-spacing:.16em;text-transform:uppercase;line-height:1;
+  }
+  #mark .sub{font-size:9.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--mute);}
+
+  /* ---------- readout rail ---------- */
+  #rail{left:26px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:24px;}
+  body.idle-chrome #rail{transform:translateY(-50%) translateX(-6px);}
+
+  .read .val{
+    font-family:var(--display);font-size:52px;font-weight:700;line-height:.85;
+    font-variant-numeric:tabular-nums;
+  }
+  .read .val.locked{color:var(--mid);}
+  .read .cap{font-size:9px;letter-spacing:.26em;text-transform:uppercase;color:var(--mute);margin-top:8px;}
+
+  #cueBox .state{
+    font-family:var(--display);font-size:19px;font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;line-height:1;color:var(--mid);
+  }
+  #cueBox .pat{
+    font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--chalk);margin-top:7px;
+  }
+  #cueBox .why{font-size:9px;letter-spacing:.1em;color:var(--dim);margin-top:5px;}
+
+  .meters{display:flex;gap:10px;align-items:flex-end;}
+  .meter{display:flex;flex-direction:column;align-items:center;gap:9px;}
+  .meter .track{width:5px;height:84px;background:var(--haze);border-radius:3px;position:relative;overflow:hidden;}
+  .meter .fill{position:absolute;left:0;right:0;bottom:0;height:100%;transform-origin:bottom;transform:scaleY(0);border-radius:3px;}
+  .meter .lbl{font-size:8.5px;letter-spacing:.18em;color:var(--mute);}
+  .m-low .fill{background:linear-gradient(to top,var(--low),#ff7ea0);}
+  .m-mid .fill{background:linear-gradient(to top,var(--mid),#ffd894);}
+  .m-air .fill{background:linear-gradient(to top,#2f8f8a,var(--air));}
+  #lamp{width:12px;height:12px;border-radius:50%;background:var(--haze);}
+
+  /* ---------- transport ---------- */
+  #bar{left:0;right:0;bottom:0;padding:0 26px 22px;display:flex;flex-direction:column;gap:11px;
+       background:linear-gradient(to top,rgba(6,7,12,.93),rgba(6,7,12,0));}
+  .row{display:flex;align-items:center;gap:15px;}
+
+  /* seek + structure map */
+  #seekWrap{flex:1;position:relative;height:22px;display:flex;align-items:center;}
+  #marks{position:absolute;left:0;right:0;top:2px;height:7px;pointer-events:none;}
+  #marks i{position:absolute;top:0;display:block;border-radius:1px;}
+  #marks i.drop{width:2px;height:7px;background:var(--mid);box-shadow:0 0 6px rgba(245,165,36,.8);}
+  #marks i.gap{width:1px;height:4px;top:3px;background:var(--dim);}
+  #marks i.micro{width:1px;height:2px;top:5px;background:var(--mute);opacity:.45;}
+  #seek{width:100%;position:relative;z-index:1;}
+
+  input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;height:16px;margin:0;cursor:pointer;}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--haze);border-radius:2px;}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:11px;height:11px;border-radius:50%;
+    background:var(--chalk);margin-top:-4.5px;transition:transform .15s ease,background .15s ease;}
+  input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.25);background:var(--mid);}
+  input[type=range]::-moz-range-track{height:2px;background:var(--haze);border-radius:2px;}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:var(--chalk);}
+  input[type=range]:focus-visible{outline:2px solid var(--air);outline-offset:4px;border-radius:2px;}
+
+  .time{font-size:11px;color:var(--mute);font-variant-numeric:tabular-nums;letter-spacing:.06em;}
+  #title{font-size:11px;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;
+         overflow:hidden;text-overflow:ellipsis;max-width:26ch;}
+  #title.empty{color:var(--mute);}
+
+  button{
+    font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--chalk);background:transparent;border:1px solid var(--haze);border-radius:2px;
+    padding:7px 10px;cursor:pointer;
+    transition:border-color .18s ease,color .18s ease,background .18s ease;
+  }
+  button:hover{border-color:var(--mute);}
+  button:focus-visible{outline:2px solid var(--air);outline-offset:2px;}
+  button.on{border-color:var(--mid);color:var(--mid);}
+  button.solid{background:var(--chalk);color:var(--ink);border-color:var(--chalk);font-weight:600;}
+  button.solid:hover{background:var(--mid);border-color:var(--mid);}
+
+  #play{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;padding:0;border-color:var(--mute);}
+  #play svg{width:13px;height:13px;fill:var(--chalk);}
+  #play:hover{border-color:var(--chalk);}
+
+  .pats{display:flex;gap:4px;}
+  .pats button{padding:7px 8px;font-size:9px;letter-spacing:.12em;}
+  .spacer{flex:1;}
+  .knob{display:flex;align-items:center;gap:8px;}
+  .knob label{font-size:8.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--mute);}
+  .knob input[type=range]{width:66px;}
+
+  /* ---------- intro ---------- */
+  #intro{position:absolute;inset:0;z-index:3;display:grid;place-items:center;
+         background:radial-gradient(ellipse at center,rgba(6,7,12,.5),rgba(6,7,12,.92));
+         transition:opacity .6s ease;}
+  #intro.gone{opacity:0;pointer-events:none;}
+  .card{text-align:center;display:flex;flex-direction:column;align-items:center;gap:18px;}
+  .card h1{
+    font-family:var(--display);font-size:clamp(48px,9vw,116px);font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;margin:0;line-height:.9;
+    background:linear-gradient(100deg,var(--low),var(--mid) 46%,var(--air));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .card p{margin:0;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--mute);}
+  .card .acts{display:flex;gap:10px;margin-top:4px;}
+  .urlrow{display:flex;gap:8px;width:min(520px,80vw);}
+  .urlrow input{
+    flex:1;font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+    color:var(--chalk);background:var(--ink-2);border:1px solid var(--haze);
+    border-radius:2px;padding:9px 11px;}
+  .urlrow input::placeholder{color:var(--dim);}
+  .urlrow input:focus{outline:none;border-color:var(--mute);}
+  .urlrow input:focus-visible{outline:2px solid var(--air);outline-offset:2px;}
+  .card .hint{font-size:10px;letter-spacing:.08em;color:var(--dim);text-transform:none;max-width:46ch;line-height:1.6;}
+
+  /* ---------- analysis progress ---------- */
+  #scan{position:absolute;inset:0;z-index:5;display:none;place-items:center;background:rgba(6,7,12,.9);}
+  #scan.show{display:grid;}
+  .scanbox{display:flex;flex-direction:column;gap:14px;align-items:center;width:min(420px,70vw);}
+  .scanbox .lbl{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--mute);}
+  .scanbox .track{width:100%;height:1px;background:var(--haze);position:relative;overflow:hidden;}
+  .scanbox .fill{position:absolute;inset:0;transform-origin:left;transform:scaleX(0);
+                 background:linear-gradient(90deg,var(--low),var(--mid),var(--air));transition:transform .12s linear;}
+  .scanbox .stat{font-size:9px;letter-spacing:.1em;color:var(--dim);}
+
+  #drop{position:absolute;inset:16px;z-index:4;border:1px dashed var(--mid);border-radius:4px;
+        display:grid;place-items:center;background:rgba(6,7,12,.82);
+        font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--mid);
+        opacity:0;pointer-events:none;transition:opacity .2s ease;}
+  body.dragging #drop{opacity:1;}
+
+  /* result panel — the reliable way out of a sandboxed page */
+  #out{position:absolute;inset:0;z-index:7;display:none;place-items:center;
+       background:rgba(6,7,12,.93);}
+  #out.on{display:grid;}
+  .outbox{width:min(560px,86vw);display:flex;flex-direction:column;gap:16px;
+          border:1px solid var(--haze);background:var(--ink-2);padding:22px;border-radius:3px;}
+  .outhead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;}
+  .outhead h2{margin:0;font-family:var(--display);font-size:20px;font-weight:700;
+              letter-spacing:.14em;text-transform:uppercase;color:var(--mid);}
+  #outMedia{display:flex;justify-content:center;background:#000;border:1px solid var(--haze);}
+  #outMedia video,#outMedia img{max-width:100%;max-height:46vh;display:block;}
+  .outmeta{font-size:10px;letter-spacing:.12em;color:var(--mute);
+           font-variant-numeric:tabular-nums;}
+  .outacts{display:flex;flex-direction:column;gap:10px;}
+  a.btnlink{display:inline-block;text-align:center;text-decoration:none;
+    font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+    background:var(--chalk);color:var(--ink);border:1px solid var(--chalk);
+    border-radius:2px;padding:10px 14px;font-weight:600;cursor:pointer;}
+  a.btnlink:hover{background:var(--mid);border-color:var(--mid);}
+  a.btnlink:focus-visible{outline:2px solid var(--air);outline-offset:2px;}
+  .outhint{font-size:10px;line-height:1.65;color:var(--dim);letter-spacing:.04em;}
+  .outhint b{color:var(--mute);font-weight:400;}
+
+  #recPill{top:22px;right:26px;display:none;align-items:center;gap:9px;
+    font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--low);
+    font-variant-numeric:tabular-nums;}
+  #recPill.on{display:flex;}
+  #recPill .dot{width:9px;height:9px;border-radius:50%;background:var(--low);
+    animation:recblink 1.1s ease-in-out infinite;}
+  @keyframes recblink{0%,100%{opacity:1}50%{opacity:.22}}
+  @media (prefers-reduced-motion:reduce){ #recPill .dot{animation:none;} }
+  button.rec{border-color:var(--low);color:var(--low);}
+  select{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--chalk);background:var(--ink-2);border:1px solid var(--haze);border-radius:2px;
+    padding:7px 8px;cursor:pointer;}
+  select:hover{border-color:var(--mute);}
+  select:focus-visible{outline:2px solid var(--air);outline-offset:2px;}
+
+  #err{position:absolute;bottom:104px;left:26px;z-index:6;font-size:10px;letter-spacing:.08em;
+       color:var(--low);opacity:0;transition:opacity .3s ease;max-width:60ch;}
+  #err.show{opacity:1;}
+
+  @media (max-width:900px){ .knob{display:none;} }
+  @media (max-width:760px){ #rail{display:none;} #mark .sub{display:none;} #title{max-width:12ch;} .pats{display:none;} }
+  @media (prefers-reduced-motion:reduce){ .chrome{transition:none;} }
+</style>
+
+<div id="stage">
+  <canvas id="gl"></canvas>
+
+  <div id="mark" class="chrome pin">
+    <span class="name">SKANZ.SOUNDS</span>
+    <span class="sub">Laser Instrument</span>
+  </div>
+
+  <div id="rail" class="chrome">
+    <div class="read">
+      <div class="val" id="bpm">—</div>
+      <div class="cap" id="bpmCap">Tempo · BPM</div>
+    </div>
+    <div id="cueBox">
+      <div class="state" id="cueState">Idle</div>
+      <div class="pat" id="cuePat">—</div>
+      <div class="why" id="cueWhy"></div>
+    </div>
+    <div class="meters">
+      <div class="meter m-low"><div class="track"><div class="fill" id="fLow"></div></div><span class="lbl">SUB</span></div>
+      <div class="meter m-mid"><div class="track"><div class="fill" id="fMid"></div></div><span class="lbl">MID</span></div>
+      <div class="meter m-air"><div class="track"><div class="fill" id="fAir"></div></div><span class="lbl">AIR</span></div>
+      <div class="meter"><div id="lamp"></div><span class="lbl" style="margin-top:9px">BEAT</span></div>
+    </div>
+  </div>
+
+  <div id="bar" class="chrome">
+    <div class="row">
+      <span class="time" id="tNow">0:00</span>
+      <div id="seekWrap">
+        <div id="marks"></div>
+        <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Seek position">
+      </div>
+      <span class="time" id="tEnd">0:00</span>
+    </div>
+    <div class="row">
+      <button id="play" aria-label="Play"><svg id="playIcon" viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z"/></svg></button>
+      <span id="title" class="empty">No track loaded</span>
+      <div class="spacer"></div>
+      <div class="pats" role="group" aria-label="Laser pattern">
+        <button id="autoBtn" class="on">Auto</button>
+        <button class="pat" data-p="0">Fan</button>
+        <button class="pat" data-p="1">Sweep</button>
+        <button class="pat" data-p="2">Cross</button>
+        <button class="pat" data-p="3">Burst</button>
+        <button class="pat" data-p="4">Wobble</button>
+        <button class="pat" data-p="5">Spiral</button>
+        <button class="pat" data-p="6">Ladder</button>
+        <button class="pat" data-p="7">Stab</button>
+      </div>
+      <div class="knob">
+        <label for="haze">Haze</label>
+        <input id="haze" type="range" min="0" max="100" value="38" aria-label="Atmospheric haze">
+      </div>
+      <div class="knob">
+        <label for="bloom">Bloom</label>
+        <input id="bloom" type="range" min="0" max="100" value="45" aria-label="Bloom strength">
+      </div>
+      <div class="knob">
+        <label for="trail">Trail</label>
+        <input id="trail" type="range" min="0" max="100" value="45" aria-label="Beam persistence">
+      </div>
+      <div class="knob">
+        <label for="vol">Vol</label>
+        <input id="vol" type="range" min="0" max="100" value="85" aria-label="Volume">
+      </div>
+      <select id="fmt" aria-label="Export frame size" title="Frame size for recording and stills">
+        <option value="window">Fit window</option>
+        <option value="9:16">9:16 · 1080&times;1920</option>
+        <option value="1:1">1:1 · 1080</option>
+        <option value="16:9">16:9 · 1920&times;1080</option>
+      </select>
+      <button id="shotBtn" title="Save the current frame as a PNG (S)">Still</button>
+      <button id="recBtn" title="Record the visuals with audio (V)">Rec</button>
+      <button id="camBtn" title="Tripod holds the shot still and the rig moves instead; Drift moves the camera (C)">Tripod</button>
+      <button id="openBtn">Open</button>
+      <button id="linkBtn" title="Load from a direct audio URL">Link</button>
+      <button id="tabBtn" title="Capture the audio of another browser tab">Tab</button>
+      <button id="micBtn">Mic</button>
+      <button id="fsBtn">Full</button>
+    </div>
+  </div>
+
+  <div id="intro">
+    <div class="card">
+      <h1>SKANZ.SOUNDS</h1>
+      <p>Drop a track — the lasers read the arrangement</p>
+      <div class="acts">
+        <button class="solid" id="introOpen">Choose audio file</button>
+        <button id="introTab">Capture a tab</button>
+        <button id="introMic">Microphone</button>
+      </div>
+      <div class="urlrow">
+        <input id="urlIn" type="url" spellcheck="false"
+               placeholder="or paste a direct audio URL — .mp3 .wav .m4a" aria-label="Direct audio URL">
+        <button id="urlGo">Load</button>
+      </div>
+      <span class="hint">The whole file is analysed before playback, so the show can anticipate a drop instead of chasing it.<br>Drag to turn the rig · scroll to zoom · R recentres · C switches tripod/drift<br>V records video · S saves a still<br>Space to play · 1–8 pick a pattern · 0 returns to auto · F for fullscreen</span>
+    </div>
+  </div>
+
+  <div id="scan">
+    <div class="scanbox">
+      <div class="lbl" id="scanLbl">Reading waveform</div>
+      <div class="track"><div class="fill" id="scanFill"></div></div>
+      <div class="stat" id="scanStat"></div>
+    </div>
+  </div>
+
+  <div id="out">
+    <div class="outbox">
+      <div class="outhead"><h2 id="outTitle">Ready</h2><button id="outClose">Close</button></div>
+      <div id="outMedia"></div>
+      <div class="outmeta" id="outMeta"></div>
+      <div class="outacts">
+        <a id="outSave" class="btnlink" download>Save to disk</a>
+        <span class="outhint">If that button does nothing, this page is sandboxed and can't write files.
+        <b>Right-click the preview above and choose &ldquo;Save Video As&rdquo;</b> &mdash; that goes through the
+        browser itself and always works.</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="recPill" class="chrome pin"><span class="dot"></span><span id="recTime">0:00</span></div>
+  <div id="drop">Release to load</div>
+  <div id="err"></div>
+  <input id="file" type="file" accept="audio/*" hidden>
+  <audio id="audio" crossorigin="anonymous"></audio>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+const TAU = Math.PI * 2;
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const lerp  = (a,b,t) => a + (b-a)*t;
+const smoothstep = (e0,e1,x) => { const t = clamp((x-e0)/(e1-e0),0,1); return t*t*(3-2*t); };
+
+/* =========================================================
+   1. GL — multi-pass: beams → persistence → bloom → composite
+   ========================================================= */
+const canvas = document.getElementById("gl");
+const gl = canvas.getContext("webgl",{antialias:false,alpha:false,depth:false,powerPreference:"high-performance"})
+        || canvas.getContext("experimental-webgl");
+
+/* rig size is negotiated against the GPU at link time — see the tier loop below */
+let BEAMS = 20, HITS = 12;
+
+const VERT = `attribute vec2 aPos; void main(){ gl_Position = vec4(aPos,0.0,1.0); }`;
+
+/* ---------- shared helpers ---------- */
+const GLSL_COMMON = `
+precision highp float;
+uniform vec2 uRes;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x + 0.03)) / (x*(2.43*x + 0.59) + 0.14), 0.0, 1.0);
+}
+`;
+
+/* ---------- pass 1: the beams themselves (linear, no tonemap) ---------- */
+const FRAG_BEAM = (N, H) => GLSL_COMMON + `
+uniform float uTime;
+uniform vec4  uBeamA[${N}];   // ox, oy, angle, intensity
+uniform vec4  uBeamB[${N}];   // hue, width, length, divergence
+uniform vec4  uHit[${H}];     // x, y, hue, intensity  (floor terminators)
+uniform float uHaze;
+uniform vec2  uHazeDrift;
+uniform float uLevel;
+uniform sampler2D uSpec;
+
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f*f*(3.0-2.0*f);
+  return mix(mix(hash(i), hash(i+vec2(1.0,0.0)), u.x),
+             mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), u.x), u.y);
+}
+float fbm(vec2 p){
+  float a = 0.5, s = 0.0;
+  for(int i=0;i<4;i++){ s += a*vnoise(p); p = p*2.07 + vec2(1.7,9.2); a *= 0.5; }
+  return s;
+}
+
+/* saturated laser gamut — real diode colours, not pastels */
+vec3 laser(float h){
+  h = fract(h);
+  vec3 c0 = vec3(1.00,0.09,0.18);   // 638nm red
+  vec3 c1 = vec3(1.00,0.60,0.08);   // amber
+  vec3 c2 = vec3(0.22,1.00,0.40);   // 520nm green
+  vec3 c3 = vec3(0.26,0.92,1.00);   // cyan
+  vec3 c4 = vec3(0.26,0.40,1.00);   // 445nm blue
+  vec3 c5 = vec3(1.00,0.22,0.88);   // magenta
+  float x = h*6.0;
+  vec3 c = mix(c0,c1,clamp(x,0.0,1.0));
+  c = mix(c,c2,clamp(x-1.0,0.0,1.0));
+  c = mix(c,c3,clamp(x-2.0,0.0,1.0));
+  c = mix(c,c4,clamp(x-3.0,0.0,1.0));
+  c = mix(c,c5,clamp(x-4.0,0.0,1.0));
+  c = mix(c,c0,clamp(x-5.0,0.0,1.0));
+  return c;
+}
+
+void main(){
+  vec2 p = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+
+  /* one haze field for the whole frame — scattering is a property of the room,
+     not of each beam. drifting it with the camera keeps the smoke attached to
+     the space instead of sliding across the screen when you orbit. */
+  // the slider is the amount of fog in the room. it used to be mix(1.0, field, uHaze),
+  // which varied how blotchy the haze was while always leaving it fully present —
+  // so turning it down never actually cleared the air.
+  float haze = uHaze * (0.55 + 0.85*fbm(p*2.1 + uHazeDrift + vec2(uTime*0.22, uTime*0.07)));
+
+  vec3 col = vec3(0.0);
+
+  for(int i=0;i<${N};i++){
+    vec4 A = uBeamA[i];
+    vec4 B = uBeamB[i];
+    float inten = A.w;
+    if(inten <= 0.002) continue;
+
+    vec2 o = A.xy;
+    vec2 d = vec2(cos(A.z), sin(A.z));
+    // a negative length flags a beam that terminates on the floor. it ends on a
+    // surface instead of dissolving into air, so it must not fade out at the tip
+    float L = abs(B.z);
+    float lands = step(B.z, 0.0);
+    vec2 v = p - o;
+    float t = clamp(dot(v,d), 0.0, L);
+    vec2  cp = o + d*t;
+    float dist = length(p - cp);
+
+    float w = B.y * (1.0 + t*B.w);
+    float g = w / (dist + w);
+
+    // in air a beam dissolves; onto a surface it stays lit but still loses some
+    // scatter with throw. flat full-brightness along the whole length read as a wall.
+    float fade = mix(1.0 - smoothstep(L*0.45, L, t), 1.0 - 0.42*(t/max(L,1e-4)), lands);
+    float grain = 0.88 + 0.12*sin(t*9.0 + A.z*13.0 - uTime*2.5);
+
+    // the beam, a tight optical halo, and the wide scatter that is actually fog.
+    // only the last follows the haze field, so haze thickens the room instead of
+    // smearing the beam — that coupling was what made the light look foggy.
+    float core = pow(g, 13.0) * 3.0;
+    float halo = pow(g,  4.5) * 0.155 * grain;
+    float scat = pow(g,  2.3) * 0.095 * haze;
+
+    col += laser(B.x) * (core + halo + scat) * inten * fade;
+
+    // patterns that fan from one point stack every one of these on the same spot,
+    // which is what blew the truss out into a solid white bar
+    float ed = length(p - o);
+    col += laser(B.x) * inten * 0.00013 / (ed*ed + 0.0006);
+  }
+
+  /* beams that reach the floor terminate in a hot spot and a pool of scatter */
+  for(int i=0;i<${H};i++){
+    vec4 Hh = uHit[i];
+    if(Hh.w <= 0.002) continue;
+    float d = length(p - Hh.xy);
+    float r = 0.006 + 0.011*Hh.w;
+    col += laser(Hh.z) * Hh.w * (0.00030/(d*d + r*r) + 0.030*exp(-d*20.0)*haze);
+  }
+
+  /* room tone: a faint spectral wash on the back wall */
+  float sp = texture2D(uSpec, vec2(clamp(abs(p.x)*1.1, 0.0, 1.0), 0.5)).r;
+  col += vec3(0.022,0.026,0.050) * sp * (0.20 + uLevel*0.8) * haze;
+  col += vec3(0.006,0.007,0.013);
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+/* ---------- pass 2: phosphor persistence ---------- */
+const FRAG_TRAIL = GLSL_COMMON + `
+uniform sampler2D uScene, uPrev;
+uniform float uDecay;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 s = texture2D(uScene, uv).rgb;
+  vec3 a = texture2D(uPrev,  uv).rgb * uDecay;
+  // max() rather than add: a scanner's trail fades, it doesn't accumulate into
+  // a brighter and brighter smear the longer a beam sits still
+  gl_FragColor = vec4(max(s, a), 1.0);
+}
+`;
+
+/* ---------- pass 3: bright extraction ---------- */
+const FRAG_BRIGHT = GLSL_COMMON + `
+uniform sampler2D uSrc;
+uniform float uThresh;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture2D(uSrc, uv).rgb;
+  float l = max(max(c.r,c.g), c.b);
+  gl_FragColor = vec4(c * smoothstep(uThresh, uThresh + 0.30, l), 1.0);
+}
+`;
+
+/* ---------- pass 4: separable gaussian ---------- */
+const FRAG_BLUR = GLSL_COMMON + `
+uniform sampler2D uSrc;
+uniform vec2 uDir;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 s = uDir / uRes;
+  // 9-tap gaussian folded into 5 bilinear fetches
+  vec3 c = texture2D(uSrc, uv).rgb * 0.227027;
+  c += (texture2D(uSrc, uv + s*1.3846).rgb + texture2D(uSrc, uv - s*1.3846).rgb) * 0.316216;
+  c += (texture2D(uSrc, uv + s*3.2308).rgb + texture2D(uSrc, uv - s*3.2308).rgb) * 0.070270;
+  gl_FragColor = vec4(c, 1.0);
+}
+`;
+
+/* ---------- pass 5: composite, tonemap, dither ---------- */
+const FRAG_COMP = GLSL_COMMON + `
+uniform sampler2D uScene, uBloom;
+uniform float uBloomAmt, uFlash, uTime;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 p = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+
+  vec3 col = texture2D(uScene, uv).rgb + texture2D(uBloom, uv).rgb * uBloomAmt;
+  col += vec3(1.0,0.96,0.92) * uFlash;
+
+  float vig = smoothstep(1.45, 0.30, length(p*vec2(0.82,1.0)));
+  col *= 0.32 + 0.68*vig;
+  col = aces(col * 1.25);
+  col = pow(col, vec3(0.4545));
+  col += (hash(gl_FragCoord.xy + fract(uTime)) - 0.5) * 0.009;
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+/* ---------- fallback: everything in one pass, straight to screen ---------- */
+const FRAG_DIRECT = (N,H) =>
+  FRAG_BEAM(N,H).replace(
+    "gl_FragColor = vec4(col, 1.0);\n}",
+    `col += vec3(1.0,0.96,0.92) * uFlashD;
+  float vig = smoothstep(1.45, 0.30, length(p*vec2(0.82,1.0)));
+  col *= 0.32 + 0.68*vig;
+  col = aces(col * 1.25);
+  col = pow(col, vec3(0.4545));
+  col += (hash(gl_FragCoord.xy + fract(uTime)) - 0.5) * 0.009;
+  gl_FragColor = vec4(col, 1.0);
+}`).replace("uniform float uLevel;", "uniform float uLevel;\nuniform float uFlashD;");
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    const log = gl.getShaderInfoLog(s);
+    gl.deleteShader(s);
+    throw new Error(log);
+  }
+  return s;
+}
+function makeProg(fragSrc){
+  const p = gl.createProgram();
+  const vs = compile(gl.VERTEX_SHADER, VERT), fs = compile(gl.FRAGMENT_SHADER, fragSrc);
+  gl.attachShader(p, vs); gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+    const log = gl.getProgramInfoLog(p);
+    throw new Error(log);
+  }
+  const U = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){
+    const info = gl.getActiveUniform(p, i);
+    const base = info.name.replace(/\[0\]$/, "");
+    U[base] = gl.getUniformLocation(p, info.name);
+  }
+  return { p, U, aPos: gl.getAttribLocation(p, "aPos") };
+}
+
+let POST = false;                 // is the multi-pass pipeline available?
+let pBeam, pDirect, pTrail, pBright, pBlur, pComp, quadBuf;
+let glError = null;
+
+if(gl){
+  try{
+    quadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+
+    // uniform budgets vary wildly across drivers, and MAX_FRAGMENT_UNIFORM_VECTORS
+    // is only advisory — the honest test is whether the thing links. take the
+    // biggest rig that does.
+    let linked = false;
+    for(const [nb, nh] of [[20,12],[12,6],[6,2]]){
+      try{
+        BEAMS = nb; HITS = nh;
+        pBeam = makeProg(FRAG_BEAM(nb, nh));
+        linked = true; break;
+      }catch(e){ glError = e.message || String(e); pBeam = null; }
+    }
+    if(!linked) throw new Error("beam shader would not link: " + glError);
+
+    pTrail  = makeProg(FRAG_TRAIL);
+    pBright = makeProg(FRAG_BRIGHT);
+    pBlur   = makeProg(FRAG_BLUR);
+    pComp   = makeProg(FRAG_COMP);
+    POST = true;
+  }catch(e){
+    glError = e.message || String(e);
+    POST = false;
+  }
+  if(!POST){
+    try{ pDirect = makeProg(FRAG_DIRECT(BEAMS, HITS)); }
+    catch(e){ glError = (glError||"") + " | " + (e.message||e); }
+  }
+}
+
+function drawQuad(prog){
+  gl.useProgram(prog.p);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.enableVertexAttribArray(prog.aPos);
+  gl.vertexAttribPointer(prog.aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+/* ---------- render targets ---------- */
+let TEXTYPE = gl ? gl.UNSIGNED_BYTE : 0;
+if(gl && POST){
+  const hf  = gl.getExtension("OES_texture_half_float");
+  const hfl = gl.getExtension("OES_texture_half_float_linear");
+  // half-float without linear filtering is useless here — the blur needs bilinear
+  if(hf && hfl) TEXTYPE = hf.HALF_FLOAT_OES;
+}
+
+function makeTarget(w, h, type){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if(!ok){ gl.deleteTexture(t); gl.deleteFramebuffer(f); return null; }
+  return { t, f, w, h };
+}
+
+let rtScene=null, rtAcc=[null,null], rtBloom=[null,null], accIdx=0, targetsOK=false;
+function freeTarget(r){ if(r){ gl.deleteTexture(r.t); gl.deleteFramebuffer(r.f); } }
+
+function buildTargets(w, h){
+  [rtScene, rtAcc[0], rtAcc[1], rtBloom[0], rtBloom[1]].forEach(freeTarget);
+  rtScene = rtAcc[0] = rtAcc[1] = rtBloom[0] = rtBloom[1] = null;
+  const bw = Math.max(2, w>>1), bh = Math.max(2, h>>1);
+
+  let type = TEXTYPE;
+  for(let attempt=0; attempt<2; attempt++){
+    rtScene   = makeTarget(w, h, type);
+    rtAcc[0]  = makeTarget(w, h, type);
+    rtAcc[1]  = makeTarget(w, h, type);
+    rtBloom[0]= makeTarget(bw, bh, type);
+    rtBloom[1]= makeTarget(bw, bh, type);
+    if(rtScene && rtAcc[0] && rtAcc[1] && rtBloom[0] && rtBloom[1]){
+      TEXTYPE = type;
+      // a fresh accumulation buffer is undefined memory; clear both
+      for(const r of rtAcc){
+        gl.bindFramebuffer(gl.FRAMEBUFFER, r.f);
+        gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return true;
+    }
+    [rtScene, rtAcc[0], rtAcc[1], rtBloom[0], rtBloom[1]].forEach(freeTarget);
+    rtScene = rtAcc[0] = rtAcc[1] = rtBloom[0] = rtBloom[1] = null;
+    type = gl.UNSIGNED_BYTE;             // half-float FBOs unsupported — retry in 8-bit
+  }
+  return false;
+}
+
+const beamA = new Float32Array(BEAMS*4);
+const beamB = new Float32Array(BEAMS*4);
+const hitA  = new Float32Array(HITS*4);
+
+const TEX_W = 512;
+const texData = new Uint8Array(TEX_W);
+let tex;
+if(gl){
+  tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.LUMINANCE,TEX_W,1,0,gl.LUMINANCE,gl.UNSIGNED_BYTE,texData);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+}
+
+/* adaptive resolution — 20 beams over a 4K panel is a lot of fill */
+let renderScale = 1.0, frameAvg = 16;
+const FMT = { "window":null, "9:16":[1080,1920], "1:1":[1080,1080], "16:9":[1920,1080] };
+let exportFmt = "window";
+
+function resize(){
+  let w, h;
+  const fixed = FMT[exportFmt];
+  if(fixed){
+    // the drawing buffer is the deliverable's real size, independent of the window.
+    // the element is letterboxed so the preview is exactly what gets recorded.
+    [w, h] = fixed;
+    const s = Math.min(innerWidth/w, innerHeight/h);
+    canvas.style.width  = (w*s) + "px";
+    canvas.style.height = (h*s) + "px";
+    canvas.style.left   = ((innerWidth  - w*s)/2) + "px";
+    canvas.style.top    = ((innerHeight - h*s)/2) + "px";
+    canvas.style.right  = "auto";
+    canvas.style.bottom = "auto";
+  }else{
+    const dpr = Math.min(window.devicePixelRatio || 1, 2) * renderScale;
+    w = Math.max(2, Math.round(innerWidth*dpr));
+    h = Math.max(2, Math.round(innerHeight*dpr));
+    canvas.style.width = "100%"; canvas.style.height = "100%";
+    canvas.style.left = "0"; canvas.style.top = "0";
+    canvas.style.right = "0"; canvas.style.bottom = "0";
+  }
+  if(canvas.width !== w || canvas.height !== h){
+    canvas.width = w; canvas.height = h;
+    if(gl){
+      gl.viewport(0,0,w,h);
+      if(POST) targetsOK = buildTargets(w, h);
+    }
+  }
+}
+addEventListener("resize", resize);
+resize();
+if(POST && !targetsOK) POST = false;      // couldn't allocate — fall back
+if(!POST && gl && !pDirect){
+  try{ pDirect = makeProg(FRAG_DIRECT(BEAMS, HITS)); }catch(e){ glError = e.message||String(e); }
+}
+
+/* =========================================================
+   2. OFFLINE ANALYSIS
+   ========================================================= */
+const A_SR = 22050, A_WIN = 1024, A_HOP = 256;
+const A_FPS = A_SR / A_HOP;                     // 86.13 frames/sec
+const A_BINHZ = A_SR / A_WIN;
+const hz2bin = hz => Math.min(A_WIN/2 - 1, Math.max(0, Math.round(hz / A_BINHZ)));
+
+function makeFFT(n){
+  const levels = Math.round(Math.log2(n));
+  const cos = new Float32Array(n/2), sin = new Float32Array(n/2);
+  for(let i=0;i<n/2;i++){ cos[i]=Math.cos(TAU*i/n); sin[i]=Math.sin(TAU*i/n); }
+  const rev = new Uint16Array(n);
+  for(let i=0;i<n;i++){ let x=i, r=0; for(let j=0;j<levels;j++){ r=(r<<1)|(x&1); x>>=1; } rev[i]=r; }
+  return (re,im) => {
+    for(let i=0;i<n;i++){ const j=rev[i]; if(j>i){ let t=re[i];re[i]=re[j];re[j]=t; t=im[i];im[i]=im[j];im[j]=t; } }
+    for(let size=2;size<=n;size*=2){
+      const half=size/2, step=n/size;
+      for(let i=0;i<n;i+=size){
+        for(let j=i,k=0;j<i+half;j++,k+=step){
+          const l=j+half;
+          const tre = re[l]*cos[k] + im[l]*sin[k];
+          const tim = -re[l]*sin[k] + im[l]*cos[k];
+          re[l]=re[j]-tre; im[l]=im[j]-tim;
+          re[j]+=tre;      im[j]+=tim;
+        }
+      }
+    }
+  };
+}
+
+/* autocorrelation with a local-maximum peak pick.
+   the global argmax sits at the edge of the search range and is meaningless there —
+   a real periodicity is a *peak*, not a slope. */
+function autocorr(x){
+  const n = x.length;
+  let mean = 0; for(let i=0;i<n;i++) mean += x[i];
+  mean /= n;
+  const c = new Float32Array(n);
+  for(let i=0;i<n;i++) c[i] = x[i] - mean;
+  const ac = new Float32Array(n);
+  for(let lag=0; lag<n; lag++){
+    let s = 0;
+    for(let i=0;i+lag<n;i++) s += c[i]*c[i+lag];
+    ac[lag] = s;
+  }
+  const z = ac[0] || 1e-9;
+  for(let i=0;i<n;i++) ac[i] /= z;
+  return ac;
+}
+function peakPick(ac, lo, hi){
+  hi = Math.min(hi, ac.length-2);
+  let best = null;
+  for(let i=Math.max(lo,1)+1; i<hi; i++){
+    if(ac[i] > ac[i-1] && ac[i] >= ac[i+1] && (!best || ac[i] > best.v)){
+      const y0=ac[i-1], y1=ac[i], y2=ac[i+1], den=y0-2*y1+y2;
+      best = { lag: Math.abs(den)>1e-9 ? i + 0.5*(y0-y2)/den : i, v: y1 };
+    }
+  }
+  return best;
+}
+
+let map = null;               // the analysed track
+let analysing = false;
+
+async function analyseBuffer(audioBuf, onProgress){
+  const src = audioBuf.getChannelData(0);
+  const src2 = audioBuf.numberOfChannels > 1 ? audioBuf.getChannelData(1) : null;
+  const ratio = audioBuf.sampleRate / A_SR;
+
+  // downmix + decimate to 22.05k (pair-average first so we don't alias)
+  const n = Math.floor(src.length / ratio);
+  const mono = new Float32Array(n);
+  for(let i=0;i<n;i++){
+    const j = i*ratio, j0 = j|0, j1 = Math.min(src.length-1, j0+1);
+    let a = (src[j0]+src[j1])*0.5;
+    if(src2) a = (a + (src2[j0]+src2[j1])*0.5) * 0.5;
+    mono[i] = a;
+  }
+  await onProgress(0.12, "resampling");
+
+  // trim silence — this file had 66s of trailing nothing that skewed the autocorrelation
+  const blk = 2205;
+  const nb = Math.floor(mono.length/blk);
+  let peakEnv = 0;
+  const env0 = new Float32Array(nb);
+  for(let b=0;b<nb;b++){
+    let s=0; for(let i=b*blk;i<(b+1)*blk;i++) s += mono[i]*mono[i];
+    env0[b] = Math.sqrt(s/blk);
+    if(env0[b] > peakEnv) peakEnv = env0[b];
+  }
+  const thr = peakEnv*0.02;
+  let b0=0, b1=nb-1;
+  while(b0<nb && env0[b0]<=thr) b0++;
+  while(b1>b0 && env0[b1]<=thr) b1--;
+  const inSample = b0*blk, outSample = Math.min(mono.length,(b1+1)*blk);
+  const offset = inSample / A_SR;
+
+  const nFrames = Math.max(1, 1 + Math.floor((outSample - inSample - A_WIN)/A_HOP));
+  const fft = makeFFT(A_WIN);
+  const win = new Float32Array(A_WIN);
+  for(let i=0;i<A_WIN;i++) win[i] = 0.5 - 0.5*Math.cos(TAU*i/(A_WIN-1));
+
+  const re = new Float32Array(A_WIN), im = new Float32Array(A_WIN);
+  const mag = new Float32Array(A_WIN/2), prev = new Float32Array(A_WIN/2);
+
+  const onset = new Float32Array(nFrames);
+  const subE  = new Float32Array(nFrames);
+  const midE  = new Float32Array(nFrames);
+  const highE = new Float32Array(nFrames);
+  const level = new Float32Array(nFrames);
+  const rmsA  = new Float32Array(nFrames);
+  const cent  = new Float32Array(nFrames);
+
+  const bSub=[hz2bin(25),hz2bin(120)], bMid=[hz2bin(400),hz2bin(2000)],
+        bHigh=[hz2bin(2000),hz2bin(8000)], bOn=hz2bin(6000);
+
+  let f = 0;
+  const CHUNK = 400;
+  while(f < nFrames){
+    const end = Math.min(nFrames, f + CHUNK);
+    for(; f<end; f++){
+      const base = inSample + f*A_HOP;
+      for(let i=0;i<A_WIN;i++){ re[i] = mono[base+i]*win[i]; im[i] = 0; }
+      fft(re, im);
+      let sum=0, wsum=0, fl=0, sq=0;
+      for(let i=0;i<A_WIN/2;i++){
+        const m = Math.sqrt(re[i]*re[i] + im[i]*im[i]);
+        mag[i] = m;
+        sum += m; wsum += m*i; sq += m*m;
+        if(i < bOn){
+          const d = Math.log1p(m*8) - Math.log1p(prev[i]*8);
+          if(d > 0) fl += d;
+        }
+      }
+      onset[f] = fl;
+      level[f] = sum / (A_WIN/2);
+      // RMS, not the mean magnitude: averaging |X| across 512 bins is dominated by
+      // the many quiet high bins, so a bright intro outscores a sub-heavy drop.
+      // squaring lets the loud partials carry the measure, which is what "big" means.
+      rmsA[f] = Math.sqrt(sq / (A_WIN/2));
+      cent[f]  = sum > 1e-9 ? (wsum/sum) * A_BINHZ : 0;
+      let s=0; for(let i=bSub[0];i<bSub[1];i++) s+=mag[i];   subE[f]  = s/Math.max(1,bSub[1]-bSub[0]);
+      s=0; for(let i=bMid[0];i<bMid[1];i++) s+=mag[i];       midE[f]  = s/Math.max(1,bMid[1]-bMid[0]);
+      s=0; for(let i=bHigh[0];i<bHigh[1];i++) s+=mag[i];     highE[f] = s/Math.max(1,bHigh[1]-bHigh[0]);
+      prev.set(mag);
+    }
+    await onProgress(0.12 + 0.68*(f/nFrames), "spectral flux");
+  }
+
+  const norm = a => { let m=0; for(let i=0;i<a.length;i++) if(a[i]>m) m=a[i];
+                      if(m>0) for(let i=0;i<a.length;i++) a[i] /= m; return a; };
+  norm(subE); norm(midE); norm(highE); norm(level); norm(rmsA);
+
+  // half-wave rectified, mean-removed onset envelope
+  let om=0; for(let i=0;i<nFrames;i++) om += onset[i];
+  om /= nFrames;
+  for(let i=0;i<nFrames;i++) onset[i] = Math.max(0, onset[i]-om);
+  norm(onset);
+
+  await onProgress(0.84, "tempo");
+
+  // ---- tempo: comb filter over autocorrelation, harmonics summed ----
+  const ac = autocorr(onset.subarray(0, Math.min(nFrames, Math.floor(A_FPS*40))));
+  let bpm = 0, bpmConf = 0;
+  {
+    let best=-1, bestB=0;
+    for(let b=60; b<=200; b+=0.1){
+      const lag = 60/b*A_FPS;
+      let s=0;
+      for(const [h,w] of [[1,1],[2,.6],[3,.35],[4,.3]]){
+        const li = Math.round(lag*h);
+        if(li < ac.length) s += w*ac[li];
+      }
+      if(s > best){ best = s; bestB = b; }
+    }
+    bpm = bestB; bpmConf = clamp(best/1.2, 0, 1);
+  }
+
+  // ---- beat phase: fit a pulse train ----
+  const period = 60/bpm*A_FPS;
+  let bestV=-1, bestOff=0;
+  for(let o=0; o<period; o+=0.25){
+    let s=0, c=0;
+    for(let p=o; p<nFrames-1; p+=period){ s += onset[Math.round(p)]; c++; }
+    if(c && s/c > bestV){ bestV = s/c; bestOff = o; }
+  }
+  const beats = [];
+  for(let p=bestOff; p<nFrames-1; p+=period) beats.push(offset + p/A_FPS);
+
+  // ---- downbeat: the bar phase carrying the most sub energy ----
+  let barPhase = 0, bestSub = -1;
+  for(let ph=0; ph<4; ph++){
+    let s=0,c=0;
+    for(let i=ph;i<beats.length;i+=4){
+      const fi = clamp(Math.round((beats[i]-offset)*A_FPS),0,nFrames-1);
+      s += subE[fi]; c++;
+    }
+    if(c && s/c > bestSub){ bestSub = s/c; barPhase = ph; }
+  }
+
+  await onProgress(0.9, "structure");
+
+  // ---- gaps: where the mix actually stops. these are the cut points ----
+  const sm = (a,k) => { const o=new Float32Array(a.length); let acc=0;
+    for(let i=0;i<a.length;i++){ acc+=a[i]; if(i>=k) acc-=a[i-k]; o[i]=acc/Math.min(i+1,k); } return o; };
+  const lvlS = sm(level, 9);
+  const subS = sm(subE, 9);
+
+  const gaps = [];
+  for(let i=0;i<nFrames;i++){
+    if(lvlS[i] < 0.08){
+      let j=i; while(j<nFrames && lvlS[j] < 0.08) j++;
+      const d = (j-i)/A_FPS;
+      // a short silence is an edit — cut the beams to black on it.
+      // a long one is just an empty section (this track opens with 10.7s of near-nothing),
+      // and blacking out for ten seconds reads as a broken visualiser, not a cue.
+      if(d > 0.22) gaps.push({s: offset+i/A_FPS, e: offset+j/A_FPS, cut: d <= 3.0});
+      i = j;
+    }
+  }
+
+  // ---- drops: sub energy steps up and stays up ----
+  const drops = [];
+  const W = Math.round(A_FPS*2);
+  for(let i=W;i<nFrames-W;i++){
+    let before=0, after=0;
+    for(let k=1;k<=W;k++){ before += subS[i-k]; after += subS[i+k]; }
+    before/=W; after/=W;
+    if(subS[i-1] < 0.35 && subS[i] >= 0.35 && after > 0.45 && before < 0.30){
+      const t = offset + i/A_FPS;
+      if(!drops.length || t - drops[drops.length-1].t > 6)
+        drops.push({t, mag: clamp(after-before,0,1)});
+    }
+  }
+
+  // ---- micro-breaks: dips relative to the surrounding level, not absolute silence.
+  //      gates, stutters and drum-fill holes are 45-100ms and never reach true silence,
+  //      so an absolute threshold misses essentially all of them. ----
+  // 3-frame mean: kills single-frame spikes without blurring a 45ms gate
+  const lvS = new Float32Array(nFrames);
+  for(let i=0;i<nFrames;i++){
+    let a=0, c=0;
+    for(let k=-1;k<=1;k++){ const j=i+k; if(j>=0 && j<nFrames){ a+=level[j]; c++; } }
+    lvS[i] = a/c;
+  }
+  const BARW = Math.max(4, Math.round((60/bpm)*4*A_FPS));
+  const localAvg = new Float32Array(nFrames);
+  { let acc = 0;
+    for(let i=0;i<nFrames;i++){
+      acc += lvS[i];
+      if(i >= BARW) acc -= lvS[i-BARW];
+      localAvg[i] = acc / Math.min(i+1, BARW);
+    } }
+
+  // the curve's midpoint sits at 0.45 — the same ratio that defines a break below —
+  // so the gate reacts to exactly the dips we call breaks, and not to ordinary ripple
+  const duck = new Float32Array(nFrames);
+  for(let i=0;i<nFrames;i++)
+    duck[i] = smoothstep(0.20, 0.70, lvS[i] / (localAvg[i] + 1e-5));
+
+  const micros = [];
+  for(let i=0;i<nFrames;i++){
+    if(level[i] < 0.45*localAvg[i]){
+      let j=i; while(j<nFrames && level[j] < 0.45*localAvg[j]) j++;
+      if((j-i)/A_FPS >= 0.045) micros.push({t: offset + i/A_FPS, d: (j-i)/A_FPS});
+      i = j;
+    }
+  }
+
+  // ---- perceived intensity, stretched across this track's own range ----
+  const rmsS = new Float32Array(nFrames);
+  for(let i=0;i<nFrames;i++){
+    let a=0, c=0;
+    for(let k=-2;k<=2;k++){ const j=i+k; if(j>=0 && j<nFrames){ a+=rmsA[j]; c++; } }
+    rmsS[i] = a/c;
+  }
+  const sorted = Float32Array.from(rmsS); sorted.sort();
+  const qAt = p => sorted[clamp(Math.floor(sorted.length*p), 0, sorted.length-1)];
+  const eLo = qAt(0.10), eHi = Math.max(eLo + 1e-4, qAt(0.92));
+  const energy = new Float32Array(nFrames);
+  for(let i=0;i<nFrames;i++) energy[i] = clamp((rmsS[i]-eLo)/(eHi-eLo), 0, 1);
+
+  const energyAvg = new Float32Array(nFrames);
+  { let acc=0;
+    for(let i=0;i<nFrames;i++){
+      acc += energy[i];
+      if(i >= BARW) acc -= energy[i-BARW];
+      energyAvg[i] = acc/Math.min(i+1, BARW);
+    } }
+
+  // ---- build evidence. "approaching a drop" is not the same as "building":
+  //      a real build rises in onset density and brightness. measure it. ----
+  const BW = Math.max(8, Math.round((60/bpm)*16*A_FPS));      // trailing 4 bars
+  const DW = Math.max(4, Math.round(A_FPS*0.5));
+  const density = new Float32Array(nFrames);
+  { let acc = 0;
+    for(let i=0;i<nFrames;i++){
+      acc += onset[i] > 0.12 ? 1 : 0;
+      if(i >= DW) acc -= onset[i-DW] > 0.12 ? 1 : 0;
+      density[i] = acc / Math.min(i+1, DW);
+    } }
+
+  const prefix = a => { const s = new Float64Array(nFrames+1);
+                        for(let i=0;i<nFrames;i++) s[i+1] = s[i] + a[i]; return s; };
+  const pL = prefix(level), pC = prefix(cent), pD = prefix(density);
+  const halfW = BW >> 1;
+  const secondHalfMinusFirst = (p, i) => {
+    const i0 = Math.max(0, i-BW), im = Math.max(0, i-halfW);
+    const n1 = im - i0, n2 = i - im;
+    if(n1 < 2 || n2 < 2) return 0;
+    return (p[i]-p[im])/n2 - (p[im]-p[i0])/n1;
+  };
+  const dL = new Float32Array(nFrames), dC = new Float32Array(nFrames), dD = new Float32Array(nFrames);
+  for(let i=0;i<nFrames;i++){
+    dL[i] = secondHalfMinusFirst(pL, i);
+    dC[i] = secondHalfMinusFirst(pC, i);
+    dD[i] = secondHalfMinusFirst(pD, i);
+  }
+  // normalise against this track's own spread — every mix has a different dynamic range
+  const spread = a => { let m=0; for(let i=0;i<a.length;i++) m+=a[i]; m/=a.length;
+                        let v=0; for(let i=0;i<a.length;i++){ const d=a[i]-m; v+=d*d; }
+                        return Math.sqrt(v/a.length) || 1e-6; };
+  const sL = spread(dL), sC = spread(dC), sD = spread(dD);
+  const buildScore = new Float32Array(nFrames);
+  for(let i=0;i<nFrames;i++)
+    buildScore[i] = clamp(0.50*(dD[i]/(2*sD)) + 0.25*(dC[i]/(2*sC)) + 0.25*(dL[i]/(2*sL)), -1, 1);
+
+  // ---- wobble LFO rate per 2s window ----
+  const wlen = Math.round(A_FPS*2), wstep = Math.round(A_FPS*0.5);
+  const wob = [];
+  for(let s=0; s+wlen<nFrames; s+=wstep){
+    const seg = subE.subarray(s, s+wlen);
+    let m=0; for(let i=0;i<seg.length;i++) m+=seg[i]; m/=seg.length;
+    let v=0; for(let i=0;i<seg.length;i++) v+=(seg[i]-m)*(seg[i]-m);
+    if(Math.sqrt(v/seg.length) < 0.02){ wob.push({t: offset+s/A_FPS, rate:0, conf:0}); continue; }
+    const a = autocorr(seg);
+    // cap the lag at a third of the window: a "period" seen barely twice isn't a period,
+    // it's the autocorrelation running out of overlap. that artefact was reporting a
+    // confident 0.82 Hz across this whole track.
+    const pk = peakPick(a, Math.floor(A_FPS/14), Math.min(Math.floor(A_FPS/1.4), Math.floor(wlen/3)));
+    wob.push(pk ? {t: offset+s/A_FPS, rate: A_FPS/pk.lag, conf: clamp(pk.v,0,1)}
+                : {t: offset+s/A_FPS, rate:0, conf:0});
+  }
+
+  await onProgress(1.0, "done");
+
+  return {
+    fps:A_FPS, offset, nFrames, duration: audioBuf.duration,
+    onset, subE, midE, highE, level, cent,
+    bpm, bpmConf, beats, barPhase, period: 60/bpm,
+    gaps, drops, wob, micros, duck, buildScore, localAvg, energy, energyAvg
+  };
+}
+
+/* =========================================================
+   3. AUDIO GRAPH (playback + live spectrum + mic fallback)
+   ========================================================= */
+const audioEl = document.getElementById("audio");
+audioEl.preload = "auto";
+
+let ctx=null, analyser=null, detector=null, gain=null, recDest=null;
+let elSource=null, micSource=null, micStream=null;
+let source = "none";
+let freq, detFreq, prevMag, logIdx, bandEdges;
+const FFT = 4096;
+
+function initAudio(){
+  if(ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = ctx.createAnalyser(); analyser.fftSize = FFT; analyser.smoothingTimeConstant = 0.74;
+  detector = ctx.createAnalyser(); detector.fftSize = FFT; detector.smoothingTimeConstant = 0.0;
+  gain = ctx.createGain(); gain.gain.value = volEl.value/100; gain.connect(ctx.destination);
+  // recording taps the source directly, so the export level doesn't follow the
+  // monitor fader — and for mic input this is the only path to the encoder
+  recDest = ctx.createMediaStreamDestination();
+
+  const bins = analyser.frequencyBinCount;
+  freq = new Uint8Array(bins); detFreq = new Uint8Array(bins); prevMag = new Float32Array(bins);
+  const hzPerBin = ctx.sampleRate / FFT;
+  logIdx = new Int32Array(TEX_W+1);
+  for(let i=0;i<=TEX_W;i++){
+    const hz = 30*Math.pow(16000/30, i/TEX_W);
+    logIdx[i] = Math.min(bins-1, Math.max(0, Math.round(hz/hzPerBin)));
+  }
+  bandEdges = [20,160,500,2000,10000].map(hz => Math.min(bins-1, Math.round(hz/hzPerBin)));
+}
+
+function disconnectAll(){
+  try{ elSource && elSource.disconnect(); }catch(e){}
+  try{ micSource && micSource.disconnect(); }catch(e){}
+  if(micStream && isLive()){
+    micStream.getTracks().forEach(t => t.stop());
+    micStream = null; micSource = null;
+  }
+}
+function routeFile(){
+  initAudio();
+  if(!elSource) elSource = ctx.createMediaElementSource(audioEl);
+  disconnectAll();
+  elSource.connect(analyser); elSource.connect(detector); elSource.connect(gain);
+  if(recDest) elSource.connect(recDest);
+  source = "file";
+}
+function routeStream(stream, kind){
+  initAudio();
+  micSource = ctx.createMediaStreamSource(stream);
+  disconnectAll();
+  micSource.connect(analyser); micSource.connect(detector);
+  // captured tab audio already reaches the speakers through its own tab, and a mic
+  // fed back to the output would howl — so neither goes to the monitor path
+  if(recDest) micSource.connect(recDest);
+  source = kind;
+}
+const isLive = () => source === "mic" || source === "tab";
+
+/* =========================================================
+   4. LIVE FEATURES (texture + bands + realtime onsets for mic)
+   ========================================================= */
+const smoothed = new Float32Array(TEX_W);
+let bass=0, mids=0, high=0, level=0, beatEnv=0;
+let rtLastBeat=-10, rtBpm=0, rtConf=0;
+const RTN = 320;
+const rtFlux = new Float32Array(RTN), rtTime = new Float32Array(RTN);
+let rtPtr=0, rtCount=0;
+const RWIN = 48; const rtRecent = new Float32Array(RWIN); let rtRec=0;
+
+function bandAvg(d,a,b){ let s=0; for(let i=a;i<b;i++) s+=d[i]; return b>a ? s/(b-a)/255 : 0; }
+
+function liveFeatures(t, dt){
+  if(!analyser) return false;
+  analyser.getByteFrequencyData(freq);
+
+  for(let i=0;i<TEX_W;i++){
+    const a=logIdx[i], b=Math.max(logIdx[i+1],a+1);
+    let peak=0; for(let j=a;j<b;j++) if(freq[j]>peak) peak=freq[j];
+    const v = Math.min(1,(peak/255)*(1 + 0.85*(i/TEX_W)));
+    smoothed[i] += (v-smoothed[i]) * (v>smoothed[i] ? 0.55 : 0.10);
+    texData[i] = (smoothed[i]*255)|0;
+  }
+  const tb=bandAvg(freq,bandEdges[0],bandEdges[1]),
+        tm=bandAvg(freq,bandEdges[2],bandEdges[3]),
+        th=bandAvg(freq,bandEdges[3],bandEdges[4]);
+  bass += (tb-bass)*(tb>bass?0.6:0.14);
+  mids += (tm-mids)*(tm>mids?0.6:0.14);
+  high += (th-high)*(th>high?0.6:0.14);
+  level += ((tb+tm+th)/3 - level)*0.12;
+
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,TEX_W,1,gl.LUMINANCE,gl.UNSIGNED_BYTE,texData);
+
+  // realtime onset detection — only the mic path depends on this
+  detector.getByteFrequencyData(detFreq);
+  let flux=0; const top=Math.min(prevMag.length,420);
+  for(let i=2;i<top;i++){
+    const m=detFreq[i]/255, d=m-prevMag[i];
+    if(d>0) flux+=d;
+    prevMag[i]=m;
+  }
+  flux/=top;
+  rtFlux[rtPtr]=flux; rtTime[rtPtr]=t; rtPtr=(rtPtr+1)%RTN; rtCount=Math.min(rtCount+1,RTN);
+  rtRecent[rtRec]=flux; rtRec=(rtRec+1)%RWIN;
+  let mean=0; for(let i=0;i<RWIN;i++) mean+=rtRecent[i];
+  mean/=RWIN;
+  let vs=0; for(let i=0;i<RWIN;i++){ const d=rtRecent[i]-mean; vs+=d*d; }
+  const thr = mean + 1.4*Math.sqrt(vs/RWIN) + 0.0016;
+  let fired=false;
+  if(flux>thr && t-rtLastBeat>0.17 && level>0.012){
+    rtLastBeat=t; beatEnv=Math.max(beatEnv, 0.55 + clamp((flux-thr)/(thr+1e-5),0,1)*0.45);
+    fired=true;
+  }
+  return fired;
+}
+
+let rtTempoAt=0;
+function rtTempo(t){
+  if(t-rtTempoAt < 0.6 || rtCount < RTN*0.6) return;
+  rtTempoAt = t;
+  const n=rtCount, buf=new Float32Array(n);
+  for(let i=0;i<n;i++) buf[i]=rtFlux[(rtPtr-n+i+RTN)%RTN];
+  const span = rtTime[(rtPtr-1+RTN)%RTN] - rtTime[(rtPtr-n+RTN)%RTN];
+  const spf = span/(n-1);
+  if(!(spf>0.001 && spf<0.2)) return;
+  const ac = autocorr(buf);
+  const pk = peakPick(ac, Math.max(2,Math.floor((60/210)/spf)), Math.min(n-8,Math.ceil((60/55)/spf)));
+  if(!pk){ rtConf*=0.7; return; }
+  let cand = 60/(pk.lag*spf);
+  while(cand < 78) cand*=2;
+  while(cand > 168) cand/=2;
+  rtConf += (clamp(pk.v*1.6,0,1)-rtConf)*0.35;
+  rtBpm = rtBpm ? rtBpm + (cand-rtBpm)*0.3 : cand;
+}
+
+// clear the live detector when the source changes, so a tempo locked onto the last
+// input doesn't carry over into the next one
+function resetAnalysis(){
+  rtBpm = 0; rtConf = 0; rtLastBeat = -10;
+  rtPtr = 0; rtCount = 0; rtRec = 0;
+  rtFlux.fill(0); rtTime.fill(0); rtRecent.fill(0);
+  if(prevMag) prevMag.fill(0);
+  beatEnv = 0;
+}
+
+/* =========================================================
+   5. LASER RIG — beams are defined in 3D. a straight line in 3D
+   projects to a straight line in 2D, so the fragment shader still
+   draws flat glowing segments and never learns about perspective.
+   ========================================================= */
+const PAT = ["FAN","SWEEP","CROSSFIRE","BURST","WOBBLE","SPIRAL","LADDER","STAB"];
+
+/* the room: floor at y=0, truss overhead, audience toward +z */
+const TRUSS_Y = 3.1, TRUSS_Z = -2.3;
+
+/* yaw 0 points at the audience; pitch is elevation */
+function dirYP(out, yaw, pitch){
+  const cp = Math.cos(pitch);
+  out[0] = Math.sin(yaw)*cp; out[1] = Math.sin(pitch); out[2] = Math.cos(yaw)*cp;
+  return out;
+}
+const _d = [0,0,0];
+
+function mkSet(){
+  return { o:new Float32Array(BEAMS*3), d:new Float32Array(BEAMS*3), p:new Float32Array(BEAMS*4) };
+}
+const S_FROM = mkSet(), S_TO = mkSet(), S_MIX = mkSet();
+
+let OUT = S_TO, oi = 0;
+
+// the whole rig can be turned about its vertical axis. patterns are authored facing
+// the room and never think about it — the rotation happens here, at the one point
+// every beam passes through, so origins and directions can never disagree.
+let rigAz = 0, rigCos = 1, rigSin = 0;
+
+function emit3(ox,oy,oz, dx,dy,dz, inten, hue, width, len){
+  if(oi >= BEAMS) return;
+  const i = oi++;
+  const ca = rigCos, sa = rigSin;
+  const rx = ox*ca + oz*sa, rz = -ox*sa + oz*ca;
+  const ex = dx*ca + dz*sa, ez = -dx*sa + dz*ca;
+  const l = Math.hypot(ex,dy,ez) || 1;
+  OUT.o[i*3]=rx; OUT.o[i*3+1]=oy; OUT.o[i*3+2]=rz;
+  OUT.d[i*3]=ex/l; OUT.d[i*3+1]=dy/l; OUT.d[i*3+2]=ez/l;
+  OUT.p[i*4]=hue; OUT.p[i*4+1]=width; OUT.p[i*4+2]=len; OUT.p[i*4+3]=Math.max(0,inten);
+}
+function runPattern(set, idx, c){
+  OUT = set; oi = 0;
+  PATFN[idx](c);
+  for(let i=oi;i<BEAMS;i++){                 // beams the pattern didn't use fade out rather than vanish
+    set.p[i*4+3] = 0;
+    set.o[i*3]=0; set.o[i*3+1]=TRUSS_Y; set.o[i*3+2]=TRUSS_Z;
+    set.d[i*3]=0; set.d[i*3+1]=-1; set.d[i*3+2]=0;
+    set.p[i*4+1]=0.02; set.p[i*4+2]=8;
+  }
+}
+
+/* hue is cyclic — interpolate the short way round or colours sweep the whole gamut */
+const hlerp = (a,b,t) => { let d = b-a; d -= Math.round(d); return a + d*t; };
+
+function blendSets(A,B,t,O){
+  for(let i=0;i<BEAMS;i++){
+    for(let k=0;k<3;k++){
+      O.o[i*3+k] = lerp(A.o[i*3+k], B.o[i*3+k], t);
+      O.d[i*3+k] = lerp(A.d[i*3+k], B.d[i*3+k], t);
+    }
+    // lerping two unit vectors doesn't give a unit vector; renormalise, and fall
+    // back to the target when the two are near-opposite and cancel out
+    const x=O.d[i*3], y=O.d[i*3+1], z=O.d[i*3+2];
+    const l = Math.hypot(x,y,z);
+    if(l > 1e-3){ O.d[i*3]=x/l; O.d[i*3+1]=y/l; O.d[i*3+2]=z/l; }
+    else { O.d[i*3]=B.d[i*3]; O.d[i*3+1]=B.d[i*3+1]; O.d[i*3+2]=B.d[i*3+2]; }
+
+    O.p[i*4]   = hlerp(A.p[i*4],   B.p[i*4],   t);
+    O.p[i*4+1] = lerp (A.p[i*4+1], B.p[i*4+1], t);
+    O.p[i*4+2] = lerp (A.p[i*4+2], B.p[i*4+2], t);
+    O.p[i*4+3] = lerp (A.p[i*4+3], B.p[i*4+3], t);
+  }
+}
+
+/* colour follows which band owns the moment */
+function hueMix(c){
+  const s=c.sub+0.001, m=c.mid+0.001, h=c.high+0.001, tot=s+m+h;
+  return 0.00*(s/tot) + 0.32*(m/tot) + 0.55*(h/tot) + 0.06*Math.sin(c.phrase*TAU);
+}
+const specAt = i => smoothed[Math.min(TEX_W-1, Math.max(0, Math.round(i*(TEX_W-1))))];
+
+let burstSeed = 0, stabSeed = 0;
+
+// how many fixtures the moment earns. quiet passages light fewer of them, which
+// reads as restraint far better than simply dimming all twenty.
+const nBeams = c => Math.max(4, Math.min(BEAMS, c.beams || BEAMS));
+
+function patFan(c){
+  const n = nBeams(c), hb = hueMix(c);
+  const spread = lerp(1.30, 0.34, c.build) * (0.85 + 0.30*Math.sin(c.phrase*TAU));
+  for(let i=0;i<n;i++){
+    const f = n>1 ? i/(n-1) - 0.5 : 0;
+    dirYP(_d, f*spread*2.0*c.flip + c.jump*0.35 + Math.sin(c.t*0.5)*0.06, -0.34 + Math.abs(f)*0.10);
+    emit3(0, TRUSS_Y, TRUSS_Z, _d[0],_d[1],_d[2],
+          (0.42 + specAt(0.08+Math.abs(f)*1.6)*1.05 + c.beatEnv*0.5) * c.gate,
+          hb + f*0.14, 0.021 + 0.012*c.sub, 15.0);
+  }
+}
+
+function patSweep(c){
+  const n = nBeams(c), hb = hueMix(c);
+  const swing = Math.sin(c.t*(0.85 + 2.0*c.level + 1.5*c.build) + c.jump*TAU) * (0.30 + 0.32*c.level) * c.flip;
+  for(let i=0;i<n;i++){
+    const f = n>1 ? i/(n-1) - 0.5 : 0;
+    dirYP(_d, swing + f*0.13, -0.42 + Math.sin(c.t*0.6 + f*2.0)*0.05);
+    emit3(f*3.4, TRUSS_Y, TRUSS_Z, _d[0],_d[1],_d[2],
+          (0.50 + specAt(Math.abs(f)*1.8)*1.0) * c.gate,
+          hb + f*0.10, 0.020, 14.0);
+  }
+}
+
+function patCross(c){
+  const n = nBeams(c), hb = hueMix(c);
+  const rot = Math.sin(c.t*1.25 + c.phrase*TAU + c.jump*TAU)*0.38*c.flip;
+  for(let i=0;i<n;i++){
+    const side = i % 2, k = (i/2)|0, m = Math.max(1, ((n/2)|0) - 1);
+    const f = k/m - 0.5, sgn = side ? -1 : 1;
+    dirYP(_d, sgn*(0.95 + f*0.55 + rot), -0.22 + f*0.18);
+    emit3(sgn*-3.0, 2.05, -1.2, _d[0],_d[1],_d[2],
+          (0.50 + specAt(0.1+Math.abs(f)*1.5)*1.1) * c.gate,
+          hb + side*0.12, 0.019, 15.0);
+  }
+}
+
+function patBurst(c){
+  const n = nBeams(c), hb = hueMix(c);
+  for(let i=0;i<n;i++){            // fibonacci sphere, squashed toward the horizontal
+    const y = n>1 ? 1 - (i/(n-1))*2 : 0;
+    const r = Math.sqrt(Math.max(0, 1-y*y));
+    const th = i*2.399963 + burstSeed;
+    emit3(0, 1.5, -1.0, Math.cos(th)*r, y*0.62, Math.sin(th)*r,
+          (0.22 + c.beatEnv*1.55 + specAt(i/n)*0.7) * c.gate,
+          hb + (i/n)*0.30, 0.023 + c.beatEnv*0.026, 11.0);
+  }
+}
+
+function patWobble(c){
+  const n = nBeams(c), hb = 0.02 + 0.12*c.high;      // sub-driven, so keep it red/amber
+  // an LFO on a filter doesn't move sinusoidally — sharpen the turnaround
+  const s = Math.sin(c.wobPhase*TAU);
+  const whip = Math.sign(s)*Math.pow(Math.abs(s), 0.45);
+  for(let i=0;i<n;i++){
+    const side = i % 2, k = (i/2)|0, m = Math.max(1, ((n/2)|0) - 1);
+    const f = k/m - 0.5, sgn = side ? -1 : 1;
+    dirYP(_d, sgn*(whip*0.60*c.flip + f*0.28), -0.30 + Math.abs(f)*0.12);
+    emit3(sgn*1.75, TRUSS_Y, TRUSS_Z, _d[0],_d[1],_d[2],
+          (0.45 + c.sub*1.30 + c.beatEnv*0.40) * c.gate,
+          hb + f*0.08, 0.030 + c.sub*0.030, 16.0);
+  }
+}
+
+function patSpiral(c){
+  const n = nBeams(c), hb = hueMix(c);
+  const spin = c.t*(0.45 + c.level*1.3)*c.flip + c.jump*TAU;
+  for(let i=0;i<n;i++){
+    const f = i/n;
+    dirYP(_d, f*TAU + spin, -0.08 + 0.34*Math.sin(c.t*0.45 + f*2.4));
+    emit3(0, 1.55, -1.2, _d[0],_d[1],_d[2],
+          (0.30 + specAt(f)*1.2) * c.gate,
+          hb + f*0.35, 0.018, 6.0 + specAt(f)*6.0);
+  }
+}
+
+function patLadder(c){
+  const n = nBeams(c), hb = hueMix(c);
+  const scroll = ((c.beat * (0.18 + 0.45*c.build) * c.flip) % 1 + 1) % 1;
+  for(let i=0;i<n;i++){
+    const side = i % 2, k = (i/2)|0, m = Math.max(1, (n/2)|0);
+    const u = ((k/m) + scroll) % 1;
+    emit3(side ? 3.6 : -3.6, 0.25 + u*3.1, TRUSS_Z + (k%3)*0.85,
+          side ? -1 : 1, 0, 0,
+          (0.35 + specAt(1-u)*1.15 + c.build*0.5) * c.gate,
+          hb + u*0.18, 0.017, 7.4);
+  }
+}
+
+function patStab(c){
+  const n = Math.min(nBeams(c), 8), hb = hueMix(c);
+  for(let i=0;i<n;i++){
+    const r1 = ((Math.sin((i+1)*12.9898 + stabSeed)*43758.5453) % 1 + 1) % 1;
+    const r2 = ((Math.sin((i+1)*78.2330 + stabSeed)*24634.6345) % 1 + 1) % 1;
+    dirYP(_d, r1*TAU, -0.15 + r2*0.55);
+    emit3(0, 1.45, -0.7, _d[0],_d[1],_d[2],
+          (c.beatEnv*c.beatEnv*2.0 + 0.04) * c.gate,
+          hb + i*0.05, 0.016, 12.0);
+  }
+}
+
+const PATFN = [patFan, patSweep, patCross, patBurst, patWobble, patSpiral, patLadder, patStab];
+
+/* ---------- transitions ---------- */
+let patFrom = 0, patTo = 0, transT = 1, transDur = 1;
+function setPattern(p, instant, force){
+  if(p === patTo) return;
+  // a cue that flickers would leave the rig permanently mid-transition
+  const dwell = map ? map.period*4 : 1.5;
+  if(!instant && !force && clockT - lastPatChange < dwell) return;
+  patFrom = patTo; patTo = p;
+  lastPatChange = clockT;
+  if(instant){ transT = 1; }
+  else { transT = 0; transDur = map ? map.period*3 : 1.15; }   // ~3 beats
+}
+const ease = t => t*t*t*(t*(t*6 - 15) + 10);
+
+/* =========================================================
+   6. CUE ENGINE — picks the pattern from the arrangement
+   ========================================================= */
+let autoCue = true, lockedPat = 0;
+let cueState = "IDLE", cueWhy = "", lastPhrase = -1, dropHold = -1;
+let lastFi = -1, lastDuck = 1, wasSparse = false, clockT = 0, lastPatChange = -1e9;
+let flipSign = 1, phaseJump = 0, brkOn = false, brkStart = 0, brkMin = 1;
+
+// where to land coming out of a break — somewhere other than where we were
+function pickOnBreak(sub, mid, hi){
+  const pool = (hi > mid && hi > sub) ? [5,1,0] : (sub > mid) ? [2,4,0] : [1,2,6];
+  for(const p of pool) if(p !== patTo) return p;
+  return pool[0];
+}
+let flash = 0, gate = 1, wobPhase = 0;
+let driftDir = 1, distKick = 0, yawKick = 0;
+
+function mapAt(t){
+  if(!map) return 0;
+  return clamp(Math.round((t - map.offset) * map.fps), 0, map.nFrames-1);
+}
+function nextOf(list, t, key){
+  for(let i=0;i<list.length;i++) if((key ? list[i][key] : list[i].s) > t) return list[i];
+  return null;
+}
+function inGap(t){
+  if(!map) return null;
+  for(const g of map.gaps) if(t >= g.s - 0.02 && t <= g.e + 0.02) return g;
+  return null;
+}
+
+function cueFromMap(t, dt){
+  const fi = mapAt(t);
+  const sub = map.subE[fi], mid = map.midE[fi], hi = map.highE[fi], lvl = map.level[fi];
+  const en = map.energy[fi];
+
+  let wr = 0, wc = 0;
+  if(map.wob.length){
+    const wi = clamp(Math.round((t - map.offset)/0.5), 0, map.wob.length-1);
+    wr = map.wob[wi].rate; wc = map.wob[wi].conf;
+  }
+
+  const bar = map.period * 4;
+  // barPhase says which beat carries the downbeat, so bars line up with the music
+  const beatPos = (t - (map.beats[0] || 0)) / map.period - map.barPhase;
+  const barPos  = beatPos / 4;
+  const phrase  = (barPos / 8) % 1;                  // 8 bars at 86 BPM = 22.3s
+
+  const nd = nextOf(map.drops, t, "t");
+  const toDrop = nd ? nd.t - t : 1e9;
+  const g = inGap(t);
+  const hardCut = !!(g && g.cut);
+
+  // the analysis runs at 86fps but we render at 60 or less, so sampling a single
+  // frame would step straight over a 45ms gate. take the deepest duck across every
+  // analysis frame since the last render instead — no little break can hide between frames.
+  let dk = map.duck[fi];
+  if(lastFi >= 0 && fi > lastFi && fi - lastFi < 400)
+    for(let i=lastFi+1;i<=fi;i++) if(map.duck[i] < dk) dk = map.duck[i];
+  lastFi = fi;
+
+  // --- the gate: what makes lasers look like a light show rather than a lamp ---
+  let target;
+  if(hardCut)            { target = 0.0;  }        // beams out for the edit
+  else if(toDrop < 0.28) { target = 0.06; }        // charge: go dark just before impact
+  else                   { target = (0.10 + 0.90*Math.pow(en, 1.15)) * lerp(0.10, 1.0, dk); }
+  // duck fast, recover gently — that asymmetry is what reads as "tight"
+  const snap = (hardCut || toDrop < 0.28) ? 0.55 : (target < gate ? 0.46 : 0.16);
+  gate += (target - gate) * snap;
+
+  // --- little breaks: react on the way OUT, so the return reads as the event ---
+  if(dk < 0.45 && lastDuck >= 0.45){ brkOn = true; brkStart = t; brkMin = dk; }
+  if(brkOn && dk < brkMin) brkMin = dk;
+  if(brkOn && dk >= 0.45 && lastDuck < 0.45){
+    brkOn = false;
+    const dur = t - brkStart;
+    if(dur >= 0.045){              // shorter than this is ripple, not a break
+      flipSign = -flipSign;        // mirror the formation — cheap, no transition to restart
+      phaseJump += 0.41;           // and shift where it sits
+      burstSeed = Math.random()*TAU;
+      stabSeed  = Math.random()*1000;
+      // a full formation change is expensive to look at. only for real edits, and
+      // never twice inside a bar, or the rig thrashes exactly like it used to.
+      if((dur >= 0.12 || brkMin < 0.15) && t - lastPatChange >= bar*0.9)
+        setPattern(pickOnBreak(sub, mid, hi), true);
+    }
+  }
+  lastDuck = dk;
+
+  let state, why, pat;
+  const bs = map.buildScore[fi];
+  const near = 1 - clamp(toDrop/(bar*4), 0, 1);
+  // only let patterns accelerate when the music is genuinely rising
+  const build = toDrop < bar*4 ? clamp(Math.max(0, bs), 0, 1) * near : 0;
+
+  if(hardCut){
+    state = "CUT"; why = `edit · ${(g.e-g.s).toFixed(2)}s`; pat = 7;
+  }else if(t - dropHold < bar){
+    state = "DROP"; why = "impact +" + (t-dropHold).toFixed(1) + "s";
+    pat = (wc > 0.35 && wr > 1.4) ? 4 : 3;
+  }else if(toDrop < bar*4){
+    // "approaching a drop" is not "building" — check the evidence before escalating
+    if(bs > 0.20){
+      state = "BUILD"; why = `rising · drop in ${toDrop.toFixed(1)}s`;
+      pat = toDrop < bar*1.5 ? 0 : 6;
+    }else if(bs < -0.12){
+      state = "DRAIN"; why = `emptying · drop in ${toDrop.toFixed(1)}s`;
+      pat = toDrop < bar*1.5 ? 7 : 5;
+    }else{
+      state = "APPROACH"; why = `drop in ${toDrop.toFixed(1)}s`;
+      pat = sub > mid ? 2 : 1;
+    }
+  }else if(map.energyAvg[fi] < (wasSparse ? 0.22 : 0.14)){
+    // judged on the bar average, not the instant level, or it flaps every few frames
+    state = "SPARSE"; why = "low energy"; pat = 7;
+  }else{
+    state = "GROOVE";
+    if(wc > 0.40 && wr > 1.4){ pat = 4; why = `LFO ${wr.toFixed(1)}Hz`; }
+    else if(hi > mid && hi > sub){ pat = 5; why = "highs lead"; }
+    else if(sub > mid){ pat = 2; why = "sub lead"; }
+    else { pat = 1; why = "mids lead"; }
+  }
+
+  // pattern changes land on phrase boundaries, never mid-bar.
+  // cuts and drops snap; everything else sweeps across ~3 beats.
+  const phraseIdx = Math.floor(barPos/8);
+  if(state !== "GROOVE" || phraseIdx !== lastPhrase){
+    if(state === "GROOVE"){ lastPhrase = phraseIdx; driftDir = -driftDir; }
+    setPattern(pat, hardCut);
+  }
+  cueState = state; cueWhy = why;
+  wasSparse = (state === "SPARSE");
+
+  // drop detection by playhead crossing
+  for(const d of map.drops){
+    if(t >= d.t && t - d.t < dt + 0.02 && dropHold !== d.t){
+      dropHold = d.t;
+      flash = 0.55 + 0.45*d.mag;
+      burstSeed = Math.random()*TAU;
+      setPattern(3, true);
+      distKick = -1.5;                       // camera lunges in on impact
+      yawKick  = (Math.random()*2-1)*0.42;
+    }
+  }
+  if(t < dropHold) dropHold = -1;            // seeked backwards
+
+  const bp = ((t - (map.beats[0]||0)) / map.period) % 1;
+  if(bp < dt/map.period){ beatEnv = Math.max(beatEnv, 0.85); stabSeed = Math.random()*1000; }
+  if(Math.floor(beatPos) % 4 === 0 && bp < dt/map.period) burstSeed = Math.random()*TAU;
+
+  wobPhase += dt * (wc > 0.3 ? wr : 1/map.period);
+
+  // a calm passage should not light the whole rig — fewer fixtures, not just dimmer
+  return { sub, mid, high: hi, level: lvl, beat: beatPos, phrase, build, wobPhase, wr, wc,
+           flip: flipSign, jump: phaseJump, energy: en,
+           beams: Math.max(4, Math.round(BEAMS * (0.30 + 0.70*en))) };
+}
+
+function cueRealtime(t, dt){
+  const lvl = level;
+  let pat;
+  if(lvl < 0.02){ cueState="SPARSE"; cueWhy="quiet"; pat=7; }
+  else if(bass > 0.45 && bass > mids){ cueState="GROOVE"; cueWhy="sub lead"; pat=2; }
+  else if(high > mids){ cueState="GROOVE"; cueWhy="highs lead"; pat=5; }
+  else { cueState="GROOVE"; cueWhy="mids lead"; pat=1; }
+  cueWhy += " · live, no lookahead";
+  setPattern(pat, false);
+  gate += ((0.25 + 0.75*smoothstep(0.01,0.25,lvl)) - gate)*0.12;
+  wobPhase += dt*2;
+  return { sub:bass, mid:mids, high, level:lvl, beat:t*1.43, phrase:(t*0.05)%1, build:0, wobPhase, wr:0, wc:0,
+           flip: flipSign, jump: phaseJump, energy: lvl,
+           beams: Math.max(4, Math.round(BEAMS * (0.30 + 0.70*clamp(lvl*2.2,0,1)))) };
+}
+
+/* =========================================================
+   7. CAMERA + RENDER LOOP
+   ========================================================= */
+const CAM_T = [0, 1.25, 0];
+const FOCAL = 1 / Math.tan(58 * Math.PI/180 / 2);
+const NEAR = 0.28;
+
+let autoCam = false;      // tripod by default — a still shot is what gets posted
+let userYaw = 0, userPitch = 0, userDist = 0;    // what the pointer sets
+let camDrift = 0, pitchBob = 0, swayPhase = 0;
+
+const camF = [0,0,0], camR = [0,0,0], camU = [0,0,0], camC = [0,0,0];
+
+function updateCamera(t, dt, c){
+  const drift = autoCam;
+  if(drift){
+    camDrift += dt * (0.05 + 0.20*c.level) * driftDir;
+    pitchBob  = Math.sin(t*0.21)*0.05;
+  }else{
+    // tripod: the shot never moves, so the rig supplies the motion instead.
+    // bounded sway rather than accumulating rotation — the formation has to stay
+    // composed to the lens, not wander off behind itself.
+    swayPhase += dt * (0.10 + 0.35*c.level);
+    pitchBob = 0;
+  }
+  distKick += (0 - distKick) * Math.min(1, dt*2.2);
+  yawKick  += (0 - yawKick)  * Math.min(1, dt*1.7);
+
+  // parked at the front of the room when locked; the drag instead turns the rig,
+  // so a reset always returns to a square-on, properly composed frame
+  const yaw   = drift ? (userYaw + camDrift + yawKick) : 0;
+  const pitch = clamp(0.15 + userPitch + (drift ? pitchBob : 0), -0.30, 1.05);
+  // vertical framing normalises FOV to height, so a 9:16 frame cuts the rig off at
+  // the sides. pull back in proportion to how tall the frame is.
+  const aspect  = canvas.width / Math.max(1, canvas.height);
+  const vertFit = clamp(1 + (0.95 - aspect)*0.9, 1, 1.9);
+  const dist  = clamp((7.8 + userDist + (drift ? distKick : 0)) * vertFit, 3.2, 26);
+
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  camC[0] = CAM_T[0] + dist*Math.sin(yaw)*cp;
+  camC[1] = CAM_T[1] + dist*sp;
+  camC[2] = CAM_T[2] + dist*Math.cos(yaw)*cp;
+
+  let fx = CAM_T[0]-camC[0], fy = CAM_T[1]-camC[1], fz = CAM_T[2]-camC[2];
+  let l = Math.hypot(fx,fy,fz) || 1; fx/=l; fy/=l; fz/=l;
+  camF[0]=fx; camF[1]=fy; camF[2]=fz;
+  // right = f × up
+  let rx = fy*0 - fz*1, ry = fz*0 - fx*0, rz = fx*1 - fy*0;
+  l = Math.hypot(rx,ry,rz) || 1; rx/=l; ry/=l; rz/=l;
+  camR[0]=rx; camR[1]=ry; camR[2]=rz;
+  // up = r × f
+  camU[0] = ry*fz - rz*fy;
+  camU[1] = rz*fx - rx*fz;
+  camU[2] = rx*fy - ry*fx;
+
+  // slide the haze field with the camera so the smoke belongs to the room
+  // rather than sitting flat on the screen while you orbit past it
+  hazeDrift[0] = yaw*0.60;
+  hazeDrift[1] = (camC[1]-CAM_T[1])*0.10;
+
+  // rig azimuth: zero in drift mode (the camera does the moving). on the tripod it
+  // carries the drag, its own sway, and the kick a drop used to give the camera.
+  rigAz = drift ? 0
+        : (-userYaw + Math.sin(swayPhase)*0.30 + Math.sin(swayPhase*0.41)*0.12 + yawKick*0.6);
+  rigCos = Math.cos(rigAz); rigSin = Math.sin(rigAz);
+}
+
+/* project a 3D set into the flat segments the shader understands */
+function projectSet(set){
+  bi = 0;
+  let hitN = 0;
+  hitA.fill(0);
+  const HH = 0.5;
+  // a beam thinner than a pixel crawls and shimmers as it moves; hold it at
+  // roughly half a pixel and let intensity carry the falloff instead
+  const MINW = 0.55 / Math.max(1, canvas.height);
+  for(let i=0;i<BEAMS;i++){
+    const inten = set.p[i*4+3];
+    if(inten <= 0.002) continue;
+
+    const ox=set.o[i*3], oy=set.o[i*3+1], oz=set.o[i*3+2];
+    const dx=set.d[i*3], dy=set.d[i*3+1], dz=set.d[i*3+2];
+    const len = set.p[i*4+2];
+
+    // depth of the origin, and how fast depth changes along the beam
+    const vx=ox-camC[0], vy=oy-camC[1], vz=oz-camC[2];
+    const z0 = vx*camF[0] + vy*camF[1] + vz*camF[2];
+    const dzd = dx*camF[0] + dy*camF[1] + dz*camF[2];
+
+    // clip against the near plane — a beam crossing behind the camera
+    // otherwise projects to garbage on the far side of the screen
+    let s0 = 0, s1 = len;
+    if(Math.abs(dzd) < 1e-6){ if(z0 < NEAR) continue; }
+    else{
+      const sn = (NEAR - z0)/dzd;
+      if(dzd > 0) s0 = Math.max(s0, sn);
+      else        s1 = Math.min(s1, sn);
+    }
+    if(s0 >= s1) continue;
+
+    // stop the beam where it meets the floor instead of passing through it
+    let floorHit = false;
+    if(dy < -1e-6){
+      const sf = -oy/dy;
+      if(sf > s0 && sf < s1){ s1 = sf; floorHit = true; }
+    }
+
+    const ax=ox+dx*s0, ay=oy+dy*s0, az=oz+dz*s0;
+    const bx=ox+dx*s1, by=oy+dy*s1, bz=oz+dz*s1;
+
+    const avx=ax-camC[0], avy=ay-camC[1], avz=az-camC[2];
+    const za = avx*camF[0] + avy*camF[1] + avz*camF[2];
+    const sax = HH*FOCAL*(avx*camR[0] + avy*camR[1] + avz*camR[2])/za;
+    const say = HH*FOCAL*(avx*camU[0] + avy*camU[1] + avz*camU[2])/za;
+
+    const bvx=bx-camC[0], bvy=by-camC[1], bvz=bz-camC[2];
+    const zb = bvx*camF[0] + bvy*camF[1] + bvz*camF[2];
+    const sbx = HH*FOCAL*(bvx*camR[0] + bvy*camR[1] + bvz*camR[2])/zb;
+    const sby = HH*FOCAL*(bvx*camU[0] + bvy*camU[1] + bvz*camU[2])/zb;
+
+    const ex = sbx-sax, ey = sby-say;
+    const slen = Math.hypot(ex, ey);
+    if(slen < 1e-5) continue;
+
+    // world width foreshortens with depth; the shader widens linearly along the
+    // segment, so hand it the near width and the rate that reaches the far width
+    const w = set.p[i*4+1];
+    const wa = Math.max(MINW, HH*FOCAL*w/za);
+    const wb = Math.max(MINW, HH*FOCAL*w/zb);
+    const div = clamp((wb/wa - 1)/slen, -0.9/Math.max(slen,1e-4), 6);
+
+    // sign of the length tells the shader whether this beam lands on the floor
+    emit(sax, say, Math.atan2(ey, ex), inten, set.p[i*4], wa, floorHit ? -slen : slen, div);
+
+    if(floorHit && hitN < HITS){
+      const k = hitN++ * 4;
+      hitA[k]   = sbx;
+      hitA[k+1] = sby;
+      hitA[k+2] = set.p[i*4];                       // hue
+      hitA[k+3] = clamp(inten*0.55, 0, 1.1);
+    }
+  }
+  flushBeams();
+}
+
+let bi = 0;
+function emit(ox,oy,ang,inten,hue,width,len,div){
+  if(bi >= BEAMS) return;
+  const i = bi++;
+  beamA[i*4]=ox; beamA[i*4+1]=oy; beamA[i*4+2]=ang; beamA[i*4+3]=Math.max(0,inten);
+  beamB[i*4]=hue; beamB[i*4+1]=width; beamB[i*4+2]=len; beamB[i*4+3]=div;
+}
+function flushBeams(){ for(let i=bi;i<BEAMS;i++) beamA[i*4+3]=0; bi=0; }
+
+/* ---------- the pass chain ---------- */
+const hazeDrift = [0,0];
+
+function bindSrc(unit, t){
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, t);
+}
+
+function renderPipeline(c, dt){
+  if(!POST && !pDirect) return;                     // nothing linked; error already surfaced
+  const W = canvas.width, H = canvas.height;
+  bindSrc(0, tex);                                  // spectrum, unit 0
+
+  if(!POST || !targetsOK){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0,0,W,H);
+    const U = pDirect.U;
+    gl.useProgram(pDirect.p);
+    gl.uniform2f(U.uRes, W, H);
+    gl.uniform1f(U.uTime, c.t);
+    gl.uniform1f(U.uHaze, hazeEl.value/100);
+    gl.uniform2f(U.uHazeDrift, hazeDrift[0], hazeDrift[1]);
+    gl.uniform1f(U.uLevel, c.level);
+    gl.uniform1f(U.uFlashD, flash);
+    gl.uniform1i(U.uSpec, 0);
+    gl.uniform4fv(U.uBeamA, beamA);
+    gl.uniform4fv(U.uBeamB, beamB);
+    gl.uniform4fv(U.uHit, hitA);
+    drawQuad(pDirect);
+    return;
+  }
+
+  /* 1 — beams into the scene buffer, linear and untonemapped */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, rtScene.f);
+  gl.viewport(0,0,rtScene.w,rtScene.h);
+  let U = pBeam.U;
+  gl.useProgram(pBeam.p);
+  gl.uniform2f(U.uRes, rtScene.w, rtScene.h);
+  gl.uniform1f(U.uTime, c.t);
+  gl.uniform1f(U.uHaze, hazeEl.value/100);
+  gl.uniform2f(U.uHazeDrift, hazeDrift[0], hazeDrift[1]);
+  gl.uniform1f(U.uLevel, c.level);
+  gl.uniform1i(U.uSpec, 0);
+  gl.uniform4fv(U.uBeamA, beamA);
+  gl.uniform4fv(U.uBeamB, beamB);
+  gl.uniform4fv(U.uHit, hitA);
+  drawQuad(pBeam);
+
+  /* 2 — phosphor persistence, frame-rate independent */
+  const src = rtAcc[accIdx], dst = rtAcc[1-accIdx];
+  const trail = trailEl.value/100;
+  const d60 = trail <= 0.001 ? 0 : 0.95*Math.pow(trail, 0.35);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.f);
+  gl.viewport(0,0,dst.w,dst.h);
+  U = pTrail.U;
+  gl.useProgram(pTrail.p);
+  gl.uniform2f(U.uRes, dst.w, dst.h);
+  gl.uniform1f(U.uDecay, Math.pow(d60, dt*60));
+  bindSrc(1, rtScene.t); gl.uniform1i(U.uScene, 1);
+  bindSrc(2, src.t);     gl.uniform1i(U.uPrev, 2);
+  drawQuad(pTrail);
+
+  /* 3 — bright extraction at half resolution */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, rtBloom[0].f);
+  gl.viewport(0,0,rtBloom[0].w,rtBloom[0].h);
+  U = pBright.U;
+  gl.useProgram(pBright.p);
+  gl.uniform2f(U.uRes, rtBloom[0].w, rtBloom[0].h);
+  gl.uniform1f(U.uThresh, 0.62);
+  bindSrc(1, dst.t); gl.uniform1i(U.uSrc, 1);
+  drawQuad(pBright);
+
+  /* 4 — separable gaussian */
+  for(const [from, to, dx, dy] of [[0,1,1.15,0],[1,0,0,1.15]]){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, rtBloom[to].f);
+    gl.viewport(0,0,rtBloom[to].w,rtBloom[to].h);
+    U = pBlur.U;
+    gl.useProgram(pBlur.p);
+    gl.uniform2f(U.uRes, rtBloom[to].w, rtBloom[to].h);
+    gl.uniform2f(U.uDir, dx, dy);
+    bindSrc(1, rtBloom[from].t); gl.uniform1i(U.uSrc, 1);
+    drawQuad(pBlur);
+  }
+
+  /* 5 — composite to the screen */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0,0,W,H);
+  U = pComp.U;
+  gl.useProgram(pComp.p);
+  gl.uniform2f(U.uRes, W, H);
+  gl.uniform1f(U.uBloomAmt, bloomEl.value/100 * 1.8);
+  gl.uniform1f(U.uFlash, flash);
+  gl.uniform1f(U.uTime, c.t);
+  bindSrc(1, dst.t);         gl.uniform1i(U.uScene, 1);
+  bindSrc(2, rtBloom[0].t);  gl.uniform1i(U.uBloom, 2);
+  drawQuad(pComp);
+
+  accIdx = 1 - accIdx;
+}
+
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const fLow=document.getElementById("fLow"), fMid=document.getElementById("fMid"),
+      fAir=document.getElementById("fAir"), lamp=document.getElementById("lamp"),
+      bpmEl=document.getElementById("bpm"), bpmCap=document.getElementById("bpmCap"),
+      cueStateEl=document.getElementById("cueState"), cuePatEl=document.getElementById("cuePat"),
+      cueWhyEl=document.getElementById("cueWhy");
+
+let prevT = performance.now()/1000, idleT = 0;
+let recording = false, shotPending = false;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  if(!gl) return;
+
+  const t0 = performance.now();
+  const t = now/1000;
+  let dt = t - prevT; prevT = t;
+  if(dt > 0.1) dt = 0.1;
+
+  const playing = isLive() || (source === "file" && !audioEl.paused && !analysing);
+  let c;
+
+  if(playing){
+    liveFeatures(t, dt);
+    if(isLive()) rtTempo(t);
+    c = (map && source === "file") ? cueFromMap(audioEl.currentTime, dt) : cueRealtime(t, dt);
+    beatEnv *= Math.pow(0.10, dt);
+  }else{
+    c = idleCue(t, dt);
+  }
+
+  if(!autoCue) setPattern(lockedPat, false, true);
+
+  clockT = t;
+  c.beatEnv = beatEnv;
+  c.gate = gate;
+  c.t = reduceMotion ? t*0.4 : t;
+  flash *= Math.pow(0.02, dt);
+
+  updateCamera(t, dt, c);
+
+  if(transT < 1){
+    transT = Math.min(1, transT + dt/Math.max(0.0001, transDur));
+    runPattern(S_FROM, patFrom, c);
+    runPattern(S_TO,   patTo,   c);
+    blendSets(S_FROM, S_TO, ease(transT), S_MIX);
+    projectSet(S_MIX);
+  }else{
+    runPattern(S_TO, patTo, c);
+    projectSet(S_TO);
+  }
+
+  renderPipeline(c, dt);
+
+  fLow.style.transform = "scaleY("+Math.min(1,c.sub*1.3).toFixed(3)+")";
+  fMid.style.transform = "scaleY("+Math.min(1,c.mid*1.5).toFixed(3)+")";
+  fAir.style.transform = "scaleY("+Math.min(1,c.high*1.8).toFixed(3)+")";
+  lamp.style.background = beatEnv>0.05 ? "var(--mid)" : "var(--haze)";
+  lamp.style.boxShadow = "0 0 "+(beatEnv*22).toFixed(1)+"px "+(beatEnv*3).toFixed(1)+"px rgba(245,165,36,"+(beatEnv*0.75).toFixed(2)+")";
+
+  cueStateEl.textContent = cueState;
+  cuePatEl.textContent = transT < 1 ? PAT[patFrom] + " → " + PAT[patTo]
+                                    : PAT[patTo] + (autoCue ? "" : " · locked");
+  cueWhyEl.textContent = cueWhy;
+
+  if(source === "file" && map){
+    bpmEl.textContent = Math.round(map.bpm); bpmEl.classList.add("locked");
+    bpmCap.textContent = "Tempo · " + (map.period*4).toFixed(2) + "s bar";
+  }else if(isLive() && rtBpm && rtConf > 0.12){
+    bpmEl.textContent = Math.round(rtBpm); bpmEl.classList.toggle("locked", rtConf>0.4);
+    bpmCap.textContent = source === "tab" ? "Tempo · tab, live" : "Tempo · live estimate";
+  }else if(source === "none"){
+    bpmEl.textContent = "—"; bpmEl.classList.remove("locked"); bpmCap.textContent = "Tempo · BPM";
+  }
+
+  if(source === "file" && !seeking && audioEl.duration){
+    seekEl.value = Math.round(audioEl.currentTime/audioEl.duration*1000);
+    tNow.textContent = fmt(audioEl.currentTime);
+  }
+
+  // never resize the canvas mid-capture: the encoder is locked to one frame size
+  if(!recording && !FMT[exportFmt]){
+    frameAvg += ((performance.now()-t0) - frameAvg)*0.05;
+    if(frameAvg > 13 && renderScale > 0.6){ renderScale -= 0.05; resize(); }
+    else if(frameAvg < 6 && renderScale < 1.0){ renderScale += 0.02; resize(); }
+  }
+
+  if(shotPending){
+    shotPending = false;
+    // must happen in the same frame as the draw: without preserveDrawingBuffer the
+    // buffer is undefined once this task ends
+    canvas.toBlob(b => b ? saveBlob(b, exportName("png"), "png") : showErr("Couldn't read the frame."), "image/png");
+  }
+}
+
+function idleCue(t, dt){
+  idleT += dt;
+  const s = t*0.5;
+  const sub = 0.18 + 0.14*Math.sin(s*1.1), mid = 0.14 + 0.09*Math.sin(s*0.77+1.4),
+        hi  = 0.10 + 0.07*Math.sin(s*1.63+0.6);
+  for(let i=0;i<TEX_W;i++){
+    const f=i/TEX_W;
+    const v=(0.16+0.14*Math.sin(f*22+s*1.7)+0.10*Math.sin(f*7-s))*Math.pow(1-f,0.6);
+    smoothed[i]+=(Math.max(0,v)-smoothed[i])*0.08;
+    texData[i]=(smoothed[i]*255)|0;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,TEX_W,1,gl.LUMINANCE,gl.UNSIGNED_BYTE,texData);
+  if(idleT > 1.4){ idleT = 0; beatEnv = 0.55; stabSeed = Math.random()*1000; }
+  beatEnv *= Math.pow(0.12, dt);
+  gate += (0.75-gate)*0.05;
+  wobPhase += dt*1.2;
+  if(source === "none" && autoCue) setPattern(0, false, true);
+  cueState = "IDLE"; cueWhy = "waiting for audio";
+  return { sub, mid, high:hi, level:0.2, beat:t*1.4, phrase:(t*0.04)%1, build:0, wobPhase, wr:0, wc:0,
+           flip: flipSign, jump: phaseJump, energy: 0.45,
+           beams: Math.max(4, Math.round(BEAMS*0.6)) };
+}
+
+requestAnimationFrame(frame);
+
+/* =========================================================
+   8. UI
+   ========================================================= */
+const fileEl=document.getElementById("file"), seekEl=document.getElementById("seek"),
+      volEl=document.getElementById("vol"), hazeEl=document.getElementById("haze"),
+      bloomEl=document.getElementById("bloom"), trailEl=document.getElementById("trail"),
+      tNow=document.getElementById("tNow"), tEnd=document.getElementById("tEnd"),
+      titleEl=document.getElementById("title"), playBtn=document.getElementById("play"),
+      playIcon=document.getElementById("playIcon"), intro=document.getElementById("intro"),
+      errEl=document.getElementById("err"), marksEl=document.getElementById("marks"),
+      scanEl=document.getElementById("scan"), scanFill=document.getElementById("scanFill"),
+      scanLbl=document.getElementById("scanLbl"), scanStat=document.getElementById("scanStat");
+
+const PLAY_D="M2 1l9 5-9 5z", PAUSE_D="M2 1h3v10H2zM7 1h3v10H7z";
+const fmt = s => !isFinite(s) ? "0:00" : Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
+
+let errTimer;
+function showErr(m){
+  errEl.textContent = m; errEl.classList.add("show");
+  clearTimeout(errTimer); errTimer = setTimeout(()=>errEl.classList.remove("show"), 5200);
+}
+
+let objectUrl = null;
+async function loadFile(file){
+  if(!file) return;
+  if(!/^audio\//.test(file.type) && !/\.(mp3|wav|ogg|m4a|flac|aac|opus)$/i.test(file.name)){
+    showErr("That file isn't audio — try an mp3, wav, m4a, ogg or flac."); return;
+  }
+  return loadBlob(file, file.name);
+}
+
+async function loadBlob(file, name){
+  initAudio();
+  if(objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(file);
+  audioEl.src = objectUrl;
+  titleEl.textContent = name.replace(/\.[^.]+$/, "");
+  titleEl.classList.remove("empty");
+  routeFile();
+  intro.classList.add("gone");
+
+  map = null; marksEl.innerHTML = ""; dropHold = -1; lastPhrase = -1; lastFi = -1; lastDuck = 1;
+  analysing = true;
+  scanEl.classList.add("show");
+  scanFill.style.transform = "scaleX(0)";
+  scanLbl.textContent = "Reading waveform";
+  scanStat.textContent = name;
+
+  try{
+    const buf = await file.arrayBuffer();
+    const decoded = await ctx.decodeAudioData(buf);
+    map = await analyseBuffer(decoded, async (p, lbl) => {
+      scanFill.style.transform = "scaleX("+p.toFixed(3)+")";
+      scanLbl.textContent = lbl;
+      await new Promise(r => requestAnimationFrame(r));   // guarantee the bar paints
+    });
+    renderMarks();
+    scanStat.textContent = `${Math.round(map.bpm)} BPM · ${map.drops.length} drops · `
+      + `${map.gaps.filter(g=>g.cut).length} cuts · ${map.micros.length} breaks`;
+    await new Promise(r => setTimeout(r, 420));
+  }catch(e){
+    showErr("Couldn't analyse that file — playing without the arrangement map. (" + (e.message||e) + ")");
+    map = null;
+  }
+  analysing = false;
+  scanEl.classList.remove("show");
+  ctx.resume().then(()=>audioEl.play()).catch(()=>{});
+}
+
+function renderMarks(){
+  if(!map || !audioEl.duration) return;
+  const D = audioEl.duration;
+  let html = "";
+  for(const g of map.gaps){
+    if(!g.cut) continue;                       // long quiet sections aren't edit points
+    const l = (g.s/D*100).toFixed(3), w = Math.max(0.12,(g.e-g.s)/D*100).toFixed(3);
+    html += `<i class="gap" style="left:${l}%;width:${w}%"></i>`;
+  }
+  for(const b of map.micros) html += `<i class="micro" style="left:${(b.t/D*100).toFixed(3)}%"></i>`;
+  for(const d of map.drops) html += `<i class="drop" style="left:${(d.t/D*100).toFixed(3)}%"></i>`;
+  marksEl.innerHTML = html;
+}
+
+audioEl.addEventListener("loadedmetadata", ()=>{ tEnd.textContent = fmt(audioEl.duration); renderMarks(); });
+audioEl.addEventListener("play",  ()=>{ playIcon.firstElementChild.setAttribute("d",PAUSE_D); playBtn.setAttribute("aria-label","Pause"); });
+audioEl.addEventListener("pause", ()=>{ playIcon.firstElementChild.setAttribute("d",PLAY_D);  playBtn.setAttribute("aria-label","Play"); });
+audioEl.addEventListener("error", ()=>{ if(audioEl.src) showErr("Couldn't decode that file — the browser doesn't support this format."); });
+
+function togglePlay(){
+  if(analysing) return;
+  if(isLive()){ stopMic(); return; }
+  if(!audioEl.src){ fileEl.click(); return; }
+  ctx && ctx.resume();
+  audioEl.paused ? audioEl.play().catch(()=>{}) : audioEl.pause();
+}
+playBtn.addEventListener("click", togglePlay);
+
+let seeking = false;
+seekEl.addEventListener("input", ()=>{ seeking = true; if(audioEl.duration) tNow.textContent = fmt(seekEl.value/1000*audioEl.duration); });
+seekEl.addEventListener("change", ()=>{
+  if(audioEl.duration) audioEl.currentTime = seekEl.value/1000*audioEl.duration;
+  seeking = false; dropHold = -1; lastPhrase = -1; lastFi = -1; lastDuck = 1;
+});
+
+volEl.addEventListener("input", ()=>{ if(gain) gain.gain.value = volEl.value/100; });
+
+document.getElementById("openBtn").addEventListener("click", ()=>fileEl.click());
+document.getElementById("introOpen").addEventListener("click", ()=>fileEl.click());
+fileEl.addEventListener("change", e => loadFile(e.target.files[0]));
+
+/* ---------- load from a direct audio URL ---------- */
+const urlIn = document.getElementById("urlIn"), urlGo = document.getElementById("urlGo"),
+      linkBtn = document.getElementById("linkBtn"), tabBtn = document.getElementById("tabBtn");
+
+async function loadUrl(raw){
+  const url = (raw||"").trim();
+  if(!url) return;
+  if(/soundcloud\.com|youtube\.com|youtu\.be|open\.spotify\.com|bandcamp\.com/i.test(url)){
+    showErr("That's a page, not an audio file. Streaming sites serve audio inside a "
+          + "cross-origin player the analyser can't reach — use Tab to capture it instead.");
+    return;
+  }
+  initAudio();
+  scanEl.classList.add("show");
+  scanFill.style.transform = "scaleX(0.04)";
+  scanLbl.textContent = "fetching";
+  scanStat.textContent = url.slice(0, 70);
+  try{
+    const res = await fetch(url, { mode: "cors" });
+    if(!res.ok) throw new Error("server returned " + res.status);
+    const type = res.headers.get("content-type") || "";
+    if(/text\/html/i.test(type)) throw new Error("that URL returns a web page, not audio");
+    const buf = await res.blob();
+    scanEl.classList.remove("show");
+    const name = decodeURIComponent(url.split("/").pop().split("?")[0]) || "stream";
+    await loadBlob(buf, name);
+  }catch(e){
+    scanEl.classList.remove("show");
+    const msg = String(e.message || e);
+    showErr(/fetch|NetworkError|Failed/i.test(msg)
+      ? "Couldn't fetch that URL. The host has to send an Access-Control-Allow-Origin header; "
+        + "most don't. Files on your own storage (S3, R2, GitHub raw) usually work."
+      : "Couldn't load that URL — " + msg);
+  }
+}
+urlGo.addEventListener("click", () => loadUrl(urlIn.value));
+urlIn.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); loadUrl(urlIn.value); } });
+linkBtn.addEventListener("click", () => {
+  intro.classList.remove("gone");
+  urlIn.focus(); urlIn.select();
+});
+
+/* ---------- capture another tab's audio ---------- */
+async function startTab(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+    showErr("This browser can't capture tab audio — Chrome or Edge can."); return;
+  }
+  try{
+    audioEl.pause(); initAudio();
+    // Chrome only offers the tab-audio checkbox when video is also requested,
+    // so ask for both and drop the picture immediately — we only want the sound
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false },
+      systemAudio: "include", preferCurrentTab: false
+    });
+    stream.getVideoTracks().forEach(t => t.stop());
+    if(!stream.getAudioTracks().length){
+      stream.getTracks().forEach(t => t.stop());
+      showErr("That share carried no audio. Pick a tab and tick “Also share tab audio”.");
+      return;
+    }
+    stream.getAudioTracks()[0].addEventListener("ended", stopMic);
+    micStream = stream;
+    routeStream(stream, "tab");
+    await ctx.resume();
+    resetAnalysis();
+    tabBtn.classList.add("on"); tabBtn.textContent = "Stop";
+    titleEl.textContent = "Tab audio"; titleEl.classList.remove("empty");
+    intro.classList.add("gone");
+  }catch(e){
+    if(e && e.name === "NotAllowedError") return;      // user dismissed the picker
+    showErr("Couldn't capture tab audio — " + (e.message || e));
+  }
+}
+tabBtn.addEventListener("click", () => source === "tab" ? stopMic() : startTab());
+document.getElementById("introTab").addEventListener("click", startTab);
+
+const micBtn = document.getElementById("micBtn");
+document.getElementById("introMic").addEventListener("click", startMic);
+micBtn.addEventListener("click", ()=> source === "mic" ? stopMic() : startMic());
+
+async function startMic(){
+  try{
+    audioEl.pause(); initAudio();
+    micStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    routeStream(micStream, "mic");
+    await ctx.resume();
+    resetAnalysis();
+    micBtn.classList.add("on"); micBtn.textContent = "Stop";
+    titleEl.textContent = "Live input"; titleEl.classList.remove("empty");
+    intro.classList.add("gone");
+  }catch(e){
+    showErr("Microphone blocked — allow access in your browser's site settings.");
+  }
+}
+function stopMic(){
+  disconnectAll(); source = "none";
+  micBtn.classList.remove("on"); micBtn.textContent = "Mic";
+  tabBtn.classList.remove("on"); tabBtn.textContent = "Tab";
+  if(audioEl.src) routeFile();
+}
+
+/* pattern lock */
+const autoBtn = document.getElementById("autoBtn");
+const patBtns = [...document.querySelectorAll(".pat")];
+function setAuto(on){
+  autoCue = on;
+  autoBtn.classList.toggle("on", on);
+  patBtns.forEach(b => b.classList.toggle("on", !on && +b.dataset.p === lockedPat));
+}
+autoBtn.addEventListener("click", ()=>setAuto(true));
+patBtns.forEach(b => b.addEventListener("click", ()=>{ lockedPat = +b.dataset.p; setAuto(false); }));
+
+const stage = document.getElementById("stage");
+function toggleFS(){ document.fullscreenElement ? document.exitFullscreen() : stage.requestFullscreen().catch(()=>{}); }
+document.getElementById("fsBtn").addEventListener("click", toggleFS);
+
+/* ---------- camera: drag to orbit, scroll to zoom ---------- */
+const camBtn = document.getElementById("camBtn");
+function setAutoCam(on){
+  autoCam = on;
+  camBtn.classList.toggle("on", on);
+  camBtn.textContent = on ? "Drift" : "Tripod";
+}
+setAutoCam(autoCam);
+camBtn.addEventListener("click", ()=>setAutoCam(!autoCam));
+
+let dragging = false, lastX = 0, lastY = 0, pid = null;
+canvas.addEventListener("pointerdown", e => {
+  dragging = true; pid = e.pointerId; lastX = e.clientX; lastY = e.clientY;
+  canvas.setPointerCapture(pid); canvas.classList.add("dragging");
+});
+canvas.addEventListener("pointermove", e => {
+  if(!dragging || e.pointerId !== pid) return;
+  userYaw   -= (e.clientX - lastX) * 0.0055;
+  userPitch += (e.clientY - lastY) * 0.0035;
+  userPitch  = clamp(userPitch, -0.42, 0.85);
+  lastX = e.clientX; lastY = e.clientY;
+});
+function endDrag(e){
+  if(!dragging || (e && e.pointerId !== pid)) return;
+  dragging = false; canvas.classList.remove("dragging");
+  try{ canvas.releasePointerCapture(pid); }catch(err){}
+}
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", endDrag);
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  userDist = clamp(userDist + e.deltaY*0.006, -4.4, 9.0);
+}, {passive:false});
+function resetCam(){ userYaw = 0; userPitch = 0; userDist = 0; camDrift = 0; swayPhase = 0; }
+
+let dragDepth = 0;
+addEventListener("dragenter", e=>{ e.preventDefault(); dragDepth++; document.body.classList.add("dragging"); });
+addEventListener("dragover", e=>e.preventDefault());
+addEventListener("dragleave", ()=>{ if(--dragDepth<=0){ dragDepth=0; document.body.classList.remove("dragging"); } });
+addEventListener("drop", e=>{ e.preventDefault(); dragDepth=0; document.body.classList.remove("dragging"); loadFile(e.dataTransfer.files[0]); });
+
+addEventListener("keydown", e=>{
+  if(/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if(e.key === " "){ e.preventDefault(); togglePlay(); }
+  else if(e.key === "0") setAuto(true);
+  else if(e.key >= "1" && e.key <= "8"){ lockedPat = +e.key - 1; setAuto(false); }
+  else if(e.key.toLowerCase() === "f") toggleFS();
+  else if(e.key.toLowerCase() === "r") resetCam();
+  else if(e.key.toLowerCase() === "c") setAutoCam(!autoCam);
+  else if(e.key.toLowerCase() === "s") shotPending = true;
+  else if(e.key.toLowerCase() === "v") recording ? stopRec() : startRec();
+  else if(e.key === "ArrowRight" && audioEl.duration) audioEl.currentTime = Math.min(audioEl.duration, audioEl.currentTime+5);
+  else if(e.key === "ArrowLeft"  && audioEl.duration) audioEl.currentTime = Math.max(0, audioEl.currentTime-5);
+});
+
+let idleTimer;
+function wake(){
+  document.body.classList.remove("idle-chrome");
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(()=>{
+    if(isLive() || (source === "file" && !audioEl.paused && !analysing))
+      document.body.classList.add("idle-chrome");
+  }, 3000);
+}
+["mousemove","mousedown","keydown","touchstart"].forEach(ev => addEventListener(ev, wake, {passive:true}));
+wake();
+
+
+/* =========================================================
+   9. EXPORT — stills and video
+   ========================================================= */
+const recBtn  = document.getElementById("recBtn"),
+      shotBtn = document.getElementById("shotBtn"),
+      fmtEl   = document.getElementById("fmt"),
+      recPill = document.getElementById("recPill"),
+      recTime = document.getElementById("recTime");
+
+let recorder = null, recChunks = [], recStartT = 0, recTick = null, recMime = "";
+
+fmtEl.addEventListener("change", () => {
+  if(recording){ fmtEl.value = exportFmt; showErr("Stop the recording before changing frame size."); return; }
+  exportFmt = fmtEl.value;
+  resize();
+});
+function exportName(ext){
+  const raw = (!titleEl.classList.contains("empty") && titleEl.textContent) ? titleEl.textContent : "skanz-sounds";
+  const safe = raw.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,48) || "skanz-sounds";
+  const d = new Date(), p = n => String(n).padStart(2,"0");
+  return `${safe}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${ext}`;
+}
+
+const outEl=document.getElementById("out"), outTitle=document.getElementById("outTitle"),
+      outMedia=document.getElementById("outMedia"), outMeta=document.getElementById("outMeta"),
+      outSave=document.getElementById("outSave"), outClose=document.getElementById("outClose");
+let outUrl = null;
+
+// a synthetic <a download> click is blocked outright in a sandboxed frame, and it
+// fails silently — the file just never appears. so always hand the result back on
+// screen too, where the browser's own save menu can reach it.
+function saveBlob(blob, name, kind){
+  if(outUrl) URL.revokeObjectURL(outUrl);
+  outUrl = URL.createObjectURL(blob);
+
+  outMedia.innerHTML = "";
+  const el = document.createElement(kind === "png" ? "img" : "video");
+  el.src = outUrl;
+  if(kind !== "png"){ el.controls = true; el.playsInline = true; }
+  else el.alt = "Captured frame";
+  outMedia.appendChild(el);
+
+  const mb = (blob.size/1048576).toFixed(1);
+  outTitle.textContent = kind === "png" ? "Still ready" : "Recording ready";
+  outMeta.textContent = `${name} · ${mb} MB · ${canvas.width}×${canvas.height}`;
+  outSave.href = outUrl;
+  outSave.download = name;
+  outEl.classList.add("on");
+
+  // still try the direct route: it works when the page isn't sandboxed
+  try{
+    const a = document.createElement("a");
+    a.href = outUrl; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }catch(e){ /* sandboxed — the panel is the way out */ }
+}
+
+outClose.addEventListener("click", () => {
+  outEl.classList.remove("on");
+  outMedia.innerHTML = "";
+  if(outUrl){ URL.revokeObjectURL(outUrl); outUrl = null; }
+});
+
+// mp4 first — social uploaders take it everywhere, webm often isn't accepted
+function pickMime(){
+  const cands = [
+    'video/mp4;codecs=avc1.4d002a,mp4a.40.2',
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm'
+  ];
+  for(const m of cands) if(MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+
+function startRec(){
+  if(recording) return;
+  if(!window.MediaRecorder || !canvas.captureStream){
+    showErr("This browser can't record the canvas."); return;
+  }
+  let stream;
+  try{ stream = canvas.captureStream(60); }
+  catch(e){ showErr("Couldn't capture the canvas — " + (e.message||e)); return; }
+
+  if(recDest) for(const tr of recDest.stream.getAudioTracks()) stream.addTrack(tr);
+
+  recMime = pickMime();
+  const px = canvas.width * canvas.height;
+  const opts = {
+    videoBitsPerSecond: Math.min(40e6, Math.max(6e6, Math.round(px*60*0.10))),
+    audioBitsPerSecond: 192000
+  };
+  if(recMime) opts.mimeType = recMime;
+  try{ recorder = new MediaRecorder(stream, opts); }
+  catch(e){
+    try{ recorder = new MediaRecorder(stream); }
+    catch(e2){ showErr("Recorder wouldn't start — " + (e2.message||e2)); return; }
+  }
+
+  recChunks = [];
+  recorder.ondataavailable = e => { if(e.data && e.data.size) recChunks.push(e.data); };
+  recorder.onerror = e => showErr("Recording failed — " + ((e.error && e.error.name) || "unknown"));
+  recorder.onstop = finishRec;
+  recorder.start(1000);
+
+  recording = true;
+  recStartT = performance.now();
+  recBtn.classList.add("rec"); recBtn.textContent = "Stop";
+  recPill.classList.add("on"); recTime.textContent = "0:00";
+  recTick = setInterval(() => { recTime.textContent = fmt((performance.now()-recStartT)/1000); }, 250);
+}
+
+function stopRec(){
+  if(recording && recorder && recorder.state !== "inactive") recorder.stop();
+}
+
+function finishRec(){
+  recording = false;
+  clearInterval(recTick); recTick = null;
+  recBtn.classList.remove("rec"); recBtn.textContent = "Rec";
+  recPill.classList.remove("on");
+
+  if(!recChunks.length){ showErr("Nothing was recorded."); return; }
+  const type = (recorder && recorder.mimeType) || recMime || "video/webm";
+  const ext  = /mp4/.test(type) ? "mp4" : "webm";
+  saveBlob(new Blob(recChunks, {type}), exportName(ext), ext);
+  recChunks = [];
+  if(ext === "webm")
+    showErr("This is .webm — this browser can't encode MP4. TikTok needs MP4: "
+          + "ffmpeg -i in.webm -c:v libx264 -pix_fmt yuv420p -c:a aac out.mp4");
+}
+
+recBtn.addEventListener("click", () => recording ? stopRec() : startRec());
+shotBtn.addEventListener("click", () => { shotPending = true; });
+
+if(!gl){
+  showErr("This browser can't run WebGL, so the lasers are unavailable.");
+  intro.querySelector("p").textContent = "WebGL is required";
+}else if(!POST && !pDirect){
+  showErr("The GPU rejected the laser shader — " + String(glError||"unknown error").slice(0,200));
+  intro.querySelector("p").textContent = "Shader compilation failed";
+}else if(glError){
+  // linked, but not at full quality — worth knowing, not worth interrupting for
+  console.warn("skanz.sounds: reduced pipeline —", glError);
+}
+})();
+</script>
+</body>
+</html>
